@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from collections.abc import Iterator
 
 from kobokeeps.errors import KoboKeepsError
 
@@ -52,3 +55,26 @@ def select_device(device_path: Path | None = None) -> KoboDevice:
     if len(devices) > 1:
         raise KoboKeepsError("Multiple Kobo eReaders found. Use --device to choose one")
     return devices[0]
+
+
+def copy_binary_file(source: Path, destination: Path) -> None:
+    """Copy a file without changing source metadata or opening it for writing."""
+    with source.open("rb") as source_file, destination.open("xb") as destination_file:
+        while chunk := source_file.read(1024 * 1024):
+            destination_file.write(chunk)
+
+
+@contextmanager
+def database_snapshot(database_path: Path) -> Iterator[Path]:
+    """Copy a Kobo database to local temporary storage before SQLite opens it."""
+    with TemporaryDirectory(prefix="kobokeeps-") as temporary_directory:
+        snapshot_root = Path(temporary_directory)
+        snapshot_database = snapshot_root / database_path.name
+        copy_binary_file(database_path, snapshot_database)
+
+        for suffix in ("-wal", "-shm"):
+            source_sidecar = Path(f"{database_path}{suffix}")
+            if source_sidecar.is_file():
+                copy_binary_file(source_sidecar, snapshot_root / source_sidecar.name)
+
+        yield snapshot_database
