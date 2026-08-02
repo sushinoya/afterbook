@@ -9,7 +9,7 @@ import re
 import uuid
 import zipfile
 
-from kobokeeps.models import Annotation, Book
+from kobokeeps.models import Annotation, Book, CoverImage
 
 EPUB_CSS = """
 body { font-family: serif; line-height: 1.5; margin: 5%; }
@@ -19,6 +19,8 @@ h2 { margin-top: 1.8em; }
 .highlight { margin: 0; }
 .note { margin: 0.6em 1.5em; font-style: italic; }
 .meta { color: #666; font-size: 0.8em; }
+.cover { margin: 0; padding: 0; }
+.cover img { max-width: 100%; max-height: 100%; }
 """.strip()
 
 
@@ -72,6 +74,16 @@ def title_document(book: Book, output_title: str, language: str) -> bytes:
     return xhtml_document(output_title, f"<h1>{escape(output_title)}</h1>{author}{counts}", language)
 
 
+def cover_document(cover: CoverImage) -> bytes:
+    """Build a simple EPUB cover page."""
+    body = (
+        '<div class="cover">'
+        f'<img src="cover.{cover.extension}" alt="Cover"/>'
+        '</div>'
+    )
+    return xhtml_document("Cover", body, "en")
+
+
 def container_document() -> bytes:
     """Return the EPUB container document."""
     return b'''<?xml version="1.0" encoding="UTF-8"?>
@@ -102,6 +114,7 @@ def package_document(
     identifier: str,
     language: str,
     chapters: list[tuple[str, str]],
+    cover: CoverImage | None,
 ) -> bytes:
     """Build the EPUB package document."""
     metadata = [
@@ -122,6 +135,16 @@ def package_document(
         '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
     ]
     spine = ['<itemref idref="title"/>']
+    if cover is not None:
+        metadata.append('<meta name="cover" content="cover-image"/>')
+        manifest.extend(
+            [
+                f'<item id="cover-image" href="cover.{cover.extension}" media-type="{cover.media_type}" properties="cover-image"/>',
+                '<item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml"/>',
+            ]
+        )
+        spine.insert(0, '<itemref idref="cover-page"/>')
+
     for index, (chapter, filename) in enumerate(chapters, start=1):
         item_id = f"chapter-{index}"
         manifest.append(
@@ -139,7 +162,12 @@ def package_document(
     return document.encode("utf-8")
 
 
-def write_epub(book: Book, annotations: list[Annotation], output_directory: Path) -> Path:
+def write_epub(
+    book: Book,
+    annotations: list[Annotation],
+    output_directory: Path,
+    cover: CoverImage | None = None,
+) -> Path:
     """Write a standalone clipping EPUB and return its path."""
     output_title = f"{book.title} - My Clippings"
     language = book.language or "en"
@@ -160,9 +188,12 @@ def write_epub(book: Book, annotations: list[Annotation], output_directory: Path
                 f"OEBPS/{filename}",
                 chapter_document(chapter_title, chapter_annotations, language),
             )
+        if cover is not None:
+            archive.writestr(f"OEBPS/cover.{cover.extension}", cover.data)
+            archive.writestr("OEBPS/cover.xhtml", cover_document(cover))
         archive.writestr(
             "OEBPS/content.opf",
-            package_document(book, output_title, identifier, language, chapters),
+            package_document(book, output_title, identifier, language, chapters, cover),
         )
 
     return output_path

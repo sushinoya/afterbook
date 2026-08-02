@@ -71,3 +71,14 @@ class Annotation:
     date_created: str | None
     date_modified: str | None
     location: AnnotationLocation
+
+
+@dataclass(frozen=True, slots=True)
+class CoverImage:
+    """A cached Kobo cover image."""
+
+    data: bytes
+    media_type: str
+    extension: str
+    width: int
+    height: int
