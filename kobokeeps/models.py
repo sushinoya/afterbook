@@ -40,3 +40,34 @@ class Book:
     highlight_count: int = 0
     note_count: int = 0
     reading_statistics: ReadingStatistics = field(default_factory=ReadingStatistics)
+
+
+@dataclass(frozen=True, slots=True)
+class AnnotationLocation:
+    """Position of an annotation in the source book."""
+
+    content_id: str
+    chapter: str
+    spine_index: float = 0.0
+    chapter_progress: float = 0.0
+    start_container_path: str | None = None
+    start_container_child_index: int | None = None
+    start_offset: int | None = None
+    end_container_path: str | None = None
+    end_container_child_index: int | None = None
+    end_offset: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Annotation:
+    """A highlight or note stored in KoboReader.sqlite."""
+
+    bookmark_id: str | None
+    uuid: str | None
+    text: str
+    note: str
+    context_string: str | None
+    color_code: int | None
+    date_created: str | None
+    date_modified: str | None
+    location: AnnotationLocation
