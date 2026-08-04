@@ -72,6 +72,17 @@ class Annotation:
     date_modified: str | None
     location: AnnotationLocation
 
+    @property
+    def sort_key(self) -> tuple[float, float, int, int, str]:
+        """Return a stable key that follows source book position."""
+        return (
+            self.location.spine_index,
+            self.location.chapter_progress,
+            self.location.start_container_child_index or 0,
+            self.location.start_offset or 0,
+            self.date_created or "",
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class CoverImage:

@@ -231,7 +231,7 @@ class KoboRepository:
             self.annotation_from_row(row, chapters)
             for row in self.connection.execute(query, (book.content_id,)).fetchall()
         ]
-        return sorted(annotations, key=lambda annotation: annotation.date_created or "")
+        return sorted(annotations, key=lambda annotation: annotation.sort_key)
 
     def chapter_records(self, book_id: str) -> list[ChapterRecord]:
         columns = table_columns(self.connection, "content")
