@@ -15,3 +15,9 @@ MIT
 ## Highlight colors
 
 `KoboReader.sqlite` stores a color code rather than an RGB value. KoboKeeps preserves that original code and uses a reference palette matched to the four colors shown by Kobo's reader interface.
+
+## Annotation archive
+
+Every generated book contains `OEBPS/archive/kobo-annotations.json`. The file preserves annotation identifiers, source locations, timestamps, color codes, notes, selected text, and `ContextString` when Kobo provides it. It is not part of the reading spine or table of contents.
+
+KoboKeeps uses an allowlisted data model and does not copy account credentials, sync tokens, DRM state, or other private Kobo database fields into the archive.

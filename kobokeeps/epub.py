@@ -9,6 +9,7 @@ import re
 import uuid
 import zipfile
 
+from kobokeeps.archive import archive_json
 from kobokeeps.models import Annotation, Book, CoverImage, highlight_color
 
 EPUB_CSS = """
@@ -139,6 +140,7 @@ def package_document(
         '<item id="css" href="styles.css" media-type="text/css"/>',
         '<item id="title" href="title.xhtml" media-type="application/xhtml+xml"/>',
         '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
+        '<item id="archive" href="archive/kobo-annotations.json" media-type="application/json"/>',
     ]
     spine = ['<itemref idref="title"/>']
     if cover is not None:
@@ -189,6 +191,7 @@ def write_epub(
         archive.writestr("OEBPS/styles.css", EPUB_CSS)
         archive.writestr("OEBPS/title.xhtml", title_document(book, output_title, language))
         archive.writestr("OEBPS/nav.xhtml", navigation_document(chapters, language))
+        archive.writestr("OEBPS/archive/kobo-annotations.json", archive_json(book, annotations))
         for (chapter_title, chapter_annotations), (_, filename) in zip(groups.items(), chapters):
             archive.writestr(
                 f"OEBPS/{filename}",
