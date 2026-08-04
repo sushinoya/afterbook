@@ -9,7 +9,7 @@ import re
 import uuid
 import zipfile
 
-from kobokeeps.models import Annotation, Book, CoverImage
+from kobokeeps.models import Annotation, Book, CoverImage, highlight_color
 
 EPUB_CSS = """
 body { font-family: serif; line-height: 1.5; margin: 5%; }
@@ -17,6 +17,7 @@ h1 { margin-bottom: 1.5em; }
 h2 { margin-top: 1.8em; }
 .clipping { margin: 1.5em 0; }
 .highlight { margin: 0; }
+.highlight-text { padding: 0.08em 0.12em; }
 .note { margin: 0.6em 1.5em; font-style: italic; }
 .meta { color: #666; font-size: 0.8em; }
 .cover { margin: 0; padding: 0; }
@@ -58,7 +59,12 @@ def chapter_document(chapter: str, annotations: list[Annotation], language: str)
     for annotation in annotations:
         parts.append('<section class="clipping">')
         if annotation.text:
-            parts.append(f'<p class="highlight">{escape(annotation.text)}</p>')
+            color = highlight_color(annotation.color_code)
+            parts.append(
+                '<p class="highlight"><span class="highlight-text" '
+                f'style="background-color: {color.hex_value};">'
+                f'{escape(annotation.text)}</span></p>'
+            )
         if annotation.note:
             parts.append(f'<blockquote class="note">{escape(annotation.note)}</blockquote>')
         if annotation.date_created:

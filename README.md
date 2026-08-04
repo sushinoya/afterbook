@@ -11,3 +11,7 @@ Early development.
 ## License
 
 MIT
+
+## Highlight colors
+
+`KoboReader.sqlite` stores a color code rather than an RGB value. KoboKeeps preserves that original code and uses a reference palette matched to the four colors shown by Kobo's reader interface.

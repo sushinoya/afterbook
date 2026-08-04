@@ -6,6 +6,30 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
+class HighlightColor:
+    """Display color for one Kobo highlight color code."""
+
+    name: str
+    hex_value: str
+
+
+KOBO_HIGHLIGHT_PALETTE: dict[int, HighlightColor] = {
+    0: HighlightColor("yellow", "#FFF4A8"),
+    1: HighlightColor("pink", "#E5A6C8"),
+    2: HighlightColor("blue", "#A7DDE6"),
+    3: HighlightColor("green", "#B9D98B"),
+}
+DEFAULT_HIGHLIGHT_COLOR = HighlightColor("gray", "#D9D9D9")
+
+
+def highlight_color(color_code: int | None) -> HighlightColor:
+    """Map Kobo's stored color code to a reference display color."""
+    if color_code is None:
+        return DEFAULT_HIGHLIGHT_COLOR
+    return KOBO_HIGHLIGHT_PALETTE.get(color_code, DEFAULT_HIGHLIGHT_COLOR)
+
+
+@dataclass(frozen=True, slots=True)
 class ReadingStatistics:
     """Reading statistics stored by Kobo for a book."""
 
