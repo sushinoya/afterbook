@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kobokeeps"
+version = "0.2.0"
+description = "Turn Kobo highlights and notes into personal books you can keep"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Suyash Shekhar", email = "suyashshekhar@gmail.com" },
+]
+dependencies = [
+    "questionary>=2.0,<3",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/sushinoya/kobo-keeps"
+Repository = "https://github.com/sushinoya/kobo-keeps"
+Issues = "https://github.com/sushinoya/kobo-keeps/issues"
+
+[project.scripts]
+kobokeeps = "kobokeeps.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "build>=1.2",
+    "mypy>=1.10",
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.setuptools]
+packages = ["kobokeeps"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+packages = ["kobokeeps"]
