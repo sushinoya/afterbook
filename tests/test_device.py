@@ -27,3 +27,19 @@ def test_discovers_kobo_in_volumes_directory(tmp_path: Path) -> None:
     devices = discover_kobos(tmp_path)
 
     assert [device.root for device in devices] == [kobo]
+
+
+def test_linux_mounts_find_user_media_directories(tmp_path: Path) -> None:
+    from kobokeeps.device import linux_mounts
+
+    home = tmp_path / "home" / "reader"
+    media_root = tmp_path / "media"
+    run_media_root = tmp_path / "run" / "media"
+    first = media_root / "reader" / "KOBOeReader"
+    second = run_media_root / "reader" / "USB"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+
+    mounts = linux_mounts(home, media_root, run_media_root)
+
+    assert mounts == [first, second]

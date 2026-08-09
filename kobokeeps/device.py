@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from collections.abc import Iterator
+import sys
 
 from kobokeeps.errors import KoboKeepsError
 
@@ -36,9 +37,41 @@ def macos_mounts(volumes_root: Path = Path("/Volumes")) -> list[Path]:
     return [path for path in volumes_root.iterdir() if path.is_dir()]
 
 
-def discover_kobos(volumes_root: Path = Path("/Volumes")) -> list[KoboDevice]:
-    """Find connected Kobo devices on macOS."""
-    return [KoboDevice(path) for path in macos_mounts(volumes_root) if is_kobo_root(path)]
+def linux_mounts(
+    home: Path = Path.home(),
+    media_root: Path = Path("/media"),
+    run_media_root: Path = Path("/run/media"),
+) -> list[Path]:
+    """Return common removable-media mounts on Linux."""
+    user = home.name
+    roots = (media_root / user, run_media_root / user)
+    mounts: list[Path] = []
+    for root in roots:
+        if root.is_dir():
+            mounts.extend(path for path in root.iterdir() if path.is_dir())
+    return mounts
+
+
+def platform_mounts(platform_name: str | None = None) -> list[Path]:
+    """Return likely removable-media mounts for the current platform."""
+    current_platform = platform_name or sys.platform
+    if current_platform == "darwin":
+        return macos_mounts()
+    if current_platform.startswith("linux"):
+        return linux_mounts()
+    return []
+
+
+def discover_kobos(
+    search_root: Path | None = None,
+    platform_name: str | None = None,
+) -> list[KoboDevice]:
+    """Find connected Kobo devices."""
+    if search_root is not None:
+        mounts = [path for path in search_root.iterdir() if path.is_dir()]
+    else:
+        mounts = platform_mounts(platform_name)
+    return [KoboDevice(path) for path in mounts if is_kobo_root(path)]
 
 
 def select_device(device_path: Path | None = None) -> KoboDevice:
