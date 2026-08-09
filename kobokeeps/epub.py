@@ -20,7 +20,6 @@ h2 { margin-top: 1.8em; }
 .highlight { margin: 0; }
 .highlight-text { padding: 0.08em 0.12em; }
 .note { margin: 0.6em 1.5em; font-style: italic; }
-.meta { color: #666; font-size: 0.8em; }
 .cover { margin: 0; padding: 0; }
 .cover img { max-width: 100%; max-height: 100%; }
 """.strip()
@@ -68,8 +67,6 @@ def chapter_document(chapter: str, annotations: list[Annotation], language: str)
             )
         if annotation.note:
             parts.append(f'<blockquote class="note">{escape(annotation.note)}</blockquote>')
-        if annotation.date_created:
-            parts.append(f'<p class="meta">{escape(annotation.date_created)}</p>')
         parts.append("</section>")
     return xhtml_document(chapter, "".join(parts), language)
 

@@ -52,3 +52,19 @@ def test_cover_page_is_full_page_and_centered() -> None:
     assert 'viewBox="0 0 1264 1680"' in page
     assert 'preserveAspectRatio="xMidYMid meet"' in page
     assert 'margin: 0 auto' in page
+
+
+def test_epub_does_not_show_annotation_timestamps(kobo_database: Path, tmp_path: Path) -> None:
+    book, annotations = load_book(kobo_database)
+    output = write_epub(book, annotations, tmp_path)
+
+    with zipfile.ZipFile(output) as epub:
+        visible_content = "\n".join(
+            epub.read(name).decode()
+            for name in epub.namelist()
+            if name.endswith(".xhtml")
+        )
+        archive = epub.read("OEBPS/archive/kobo-annotations.json").decode()
+
+    assert "2024-01-25T16:27:37.000" not in visible_content
+    assert "2024-01-25T16:27:37.000" in archive
