@@ -82,13 +82,32 @@ def title_document(book: Book, output_title: str, language: str) -> bytes:
 
 
 def cover_document(cover: CoverImage) -> bytes:
-    """Build a simple EPUB cover page."""
-    body = (
-        '<div class="cover">'
-        f'<img src="cover.{cover.extension}" alt="Cover"/>'
-        '</div>'
-    )
-    return xhtml_document("Cover", body, "en")
+    """Build a full-page centered EPUB cover."""
+    document = f'''<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:svg="http://www.w3.org/2000/svg"
+      xmlns:xlink="http://www.w3.org/1999/xlink">
+<head>
+  <title>Cover</title>
+  <style type="text/css">
+    @page {{ margin: 0; padding: 0; }}
+    html, body {{ width: 100%; height: 100%; margin: 0; padding: 0; }}
+    body {{ overflow: hidden; text-align: center; }}
+    svg {{ display: block; width: 100%; height: 100%; margin: 0 auto; padding: 0; }}
+  </style>
+</head>
+<body>
+  <svg:svg width="100%" height="100%" viewBox="0 0 {cover.width} {cover.height}"
+           preserveAspectRatio="xMidYMid meet">
+    <svg:image x="0" y="0" width="{cover.width}" height="{cover.height}"
+               preserveAspectRatio="xMidYMid meet"
+               href="cover.{cover.extension}"
+               xlink:href="cover.{cover.extension}"/>
+  </svg:svg>
+</body>
+</html>
+'''
+    return document.encode("utf-8")
 
 
 def container_document() -> bytes:

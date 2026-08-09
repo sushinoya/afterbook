@@ -39,3 +39,16 @@ def test_epub_stores_mimetype_first_and_uncompressed(kobo_database: Path, tmp_pa
         first_entry = epub.infolist()[0]
         assert first_entry.filename == "mimetype"
         assert first_entry.compress_type == zipfile.ZIP_STORED
+
+
+def test_cover_page_is_full_page_and_centered() -> None:
+    from kobokeeps.epub import cover_document
+    from kobokeeps.models import CoverImage
+
+    cover = CoverImage(b"image", "image/jpeg", "jpg", 1264, 1680)
+    page = cover_document(cover).decode()
+
+    assert '@page { margin: 0; padding: 0; }' in page
+    assert 'viewBox="0 0 1264 1680"' in page
+    assert 'preserveAspectRatio="xMidYMid meet"' in page
+    assert 'margin: 0 auto' in page
