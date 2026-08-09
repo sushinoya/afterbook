@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 import sys
 
 from kobokeeps.errors import KoboKeepsError
@@ -52,6 +52,12 @@ def linux_mounts(
     return mounts
 
 
+def windows_mounts(candidates: Iterable[Path] | None = None) -> list[Path]:
+    """Return mounted drive roots on Windows."""
+    drive_roots = candidates or (Path(f"{letter}:\\") for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    return [path for path in drive_roots if path.is_dir()]
+
+
 def platform_mounts(platform_name: str | None = None) -> list[Path]:
     """Return likely removable-media mounts for the current platform."""
     current_platform = platform_name or sys.platform
@@ -59,6 +65,8 @@ def platform_mounts(platform_name: str | None = None) -> list[Path]:
         return macos_mounts()
     if current_platform.startswith("linux"):
         return linux_mounts()
+    if current_platform == "win32":
+        return windows_mounts()
     return []
 
 

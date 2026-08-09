@@ -43,3 +43,13 @@ def test_linux_mounts_find_user_media_directories(tmp_path: Path) -> None:
     mounts = linux_mounts(home, media_root, run_media_root)
 
     assert mounts == [first, second]
+
+
+def test_windows_mounts_filter_existing_drive_roots(tmp_path: Path) -> None:
+    from kobokeeps.device import windows_mounts
+
+    mounted = tmp_path / "E"
+    missing = tmp_path / "F"
+    mounted.mkdir()
+
+    assert windows_mounts([mounted, missing]) == [mounted]
