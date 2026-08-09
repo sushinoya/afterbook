@@ -68,3 +68,14 @@ def test_epub_does_not_show_annotation_timestamps(kobo_database: Path, tmp_path:
 
     assert "2024-01-25T16:27:37.000" not in visible_content
     assert "2024-01-25T16:27:37.000" in archive
+
+
+def test_notes_are_unlabelled_blockquotes(kobo_database: Path, tmp_path: Path) -> None:
+    book, annotations = load_book(kobo_database)
+    output = write_epub(book, annotations, tmp_path)
+
+    with zipfile.ZipFile(output) as epub:
+        chapter = epub.read("OEBPS/chapter-2.xhtml").decode()
+
+    assert '<blockquote class="note">This is my note.</blockquote>' in chapter
+    assert "My note" not in chapter

@@ -19,7 +19,7 @@ h2 { margin-top: 1.8em; }
 .clipping { margin: 1.5em 0; }
 .highlight { margin: 0; }
 .highlight-text { padding: 0.08em 0.12em; }
-.note { margin: 0.6em 1.5em; font-style: italic; }
+.note { margin: 0.8em 1.5em; padding-left: 0.8em; border-left: 0.15em solid #999; }
 .cover { margin: 0; padding: 0; }
 .cover img { max-width: 100%; max-height: 100%; }
 """.strip()
