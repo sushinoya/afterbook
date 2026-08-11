@@ -8,7 +8,7 @@ import sys
 
 from kobokeeps.cover import load_cover
 from kobokeeps.database import KoboRepository, open_database
-from kobokeeps.device import database_snapshot, select_device
+from kobokeeps.device import database_snapshot, local_output_directory, select_device
 from kobokeeps.epub import write_epub
 from kobokeeps.errors import KoboKeepsError
 from kobokeeps.models import Book
@@ -84,7 +84,8 @@ def run(arguments: list[str] | None = None) -> int:
             connection.close()
 
     cover = load_cover(device.root, book.image_id)
-    output_path = write_epub(book, annotations, parsed.output.expanduser(), cover)
+    output_directory = local_output_directory(parsed.output, device.root)
+    output_path = write_epub(book, annotations, output_directory, cover)
     print(output_path)
     return 0
 

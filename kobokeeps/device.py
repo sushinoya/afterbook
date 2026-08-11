@@ -98,6 +98,15 @@ def select_device(device_path: Path | None = None) -> KoboDevice:
     return devices[0]
 
 
+def local_output_directory(output_directory: Path, device_root: Path) -> Path:
+    """Resolve an output directory and reject paths on the Kobo device."""
+    resolved_output = output_directory.expanduser().resolve()
+    resolved_device = device_root.resolve()
+    if resolved_output == resolved_device or resolved_output.is_relative_to(resolved_device):
+        raise KoboKeepsError("Output directory cannot be on the Kobo eReader")
+    return resolved_output
+
+
 def copy_binary_file(source: Path, destination: Path) -> None:
     """Copy a file without changing source metadata or opening it for writing."""
     with source.open("rb") as source_file, destination.open("xb") as destination_file:

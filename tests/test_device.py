@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kobokeeps.device import database_snapshot, discover_kobos
+from kobokeeps.device import database_snapshot, discover_kobos, local_output_directory
+from kobokeeps.errors import KoboKeepsError
 
 
 def test_database_snapshot_copies_database_and_sidecar(kobo_database: Path) -> None:
@@ -53,3 +54,21 @@ def test_windows_mounts_filter_existing_drive_roots(tmp_path: Path) -> None:
     mounted.mkdir()
 
     assert windows_mounts([mounted, missing]) == [mounted]
+
+
+def test_rejects_output_on_kobo(tmp_path: Path) -> None:
+    import pytest
+
+    device = tmp_path / "KOBOeReader"
+    device.mkdir()
+
+    with pytest.raises(KoboKeepsError, match="cannot be on the Kobo"):
+        local_output_directory(device / "Books", device)
+
+
+def test_allows_output_outside_kobo(tmp_path: Path) -> None:
+    device = tmp_path / "KOBOeReader"
+    output = tmp_path / "KoboKeeps"
+    device.mkdir()
+
+    assert local_output_directory(output, device) == output.resolve()
