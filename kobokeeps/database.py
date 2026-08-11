@@ -77,42 +77,6 @@ def table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in rows}
 
 
-def optional_text(value: object) -> str | None:
-    """Normalize an optional text value."""
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def optional_int(value: object) -> int | None:
-    """Convert an optional value to int when possible."""
-    if value in (None, ""):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def optional_number(value: object) -> float | int | None:
-    """Convert an optional value to a numeric type when possible."""
-    if value in (None, ""):
-        return None
-    if isinstance(value, (int, float)):
-        return value
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return int(number) if number.is_integer() else number
-
-
-def optional_float(value: object) -> float | None:
-    """Convert an optional value to float when possible."""
-    number = optional_number(value)
-    return float(number) if number is not None else None
-
 
 def select_column(columns: set[str], column: str, alias: str) -> str:
     """Select a column when present and NULL otherwise."""
@@ -175,32 +139,32 @@ class KoboRepository:
 
     def book_from_row(self, row: sqlite3.Row) -> Book:
         statistics = ReadingStatistics(
-            read_status=optional_int(row["read_status"]),
-            percent_read=optional_float(row["percent_read"]),
-            date_last_read=optional_text(row["date_last_read"]),
-            time_spent_reading=optional_number(row["time_spent_reading"]),
-            times_started_reading=optional_int(row["times_started_reading"]),
-            last_time_started_reading=optional_text(row["last_time_started_reading"]),
-            last_time_finished_reading=optional_text(row["last_time_finished_reading"]),
-            store_pages=optional_int(row["store_pages"]),
-            store_word_count=optional_int(row["store_word_count"]),
-            rating=optional_number(row["rating"]),
-            rating_date_modified=optional_text(row["rating_date_modified"]),
+            read_status=row["read_status"],
+            percent_read=row["percent_read"],
+            date_last_read=row["date_last_read"],
+            time_spent_reading=row["time_spent_reading"],
+            times_started_reading=row["times_started_reading"],
+            last_time_started_reading=row["last_time_started_reading"],
+            last_time_finished_reading=row["last_time_finished_reading"],
+            store_pages=row["store_pages"],
+            store_word_count=row["store_word_count"],
+            rating=row["rating"],
+            rating_date_modified=row["rating_date_modified"],
         )
         return Book(
             content_id=str(row["content_id"]),
-            title=optional_text(row["title"]) or "Untitled",
-            author=optional_text(row["author"]),
-            subtitle=optional_text(row["subtitle"]),
-            isbn=optional_text(row["isbn"]),
-            language=optional_text(row["language"]),
-            publisher=optional_text(row["publisher"]),
-            series=optional_text(row["series"]),
-            series_number=optional_number(row["series_number"]),
-            image_id=optional_text(row["image_id"]),
-            date_created=optional_text(row["date_created"]),
-            highlight_count=optional_int(row["highlight_count"]) or 0,
-            note_count=optional_int(row["note_count"]) or 0,
+            title=row["title"] or "Untitled",
+            author=row["author"],
+            subtitle=row["subtitle"],
+            isbn=row["isbn"],
+            language=row["language"],
+            publisher=row["publisher"],
+            series=row["series"],
+            series_number=row["series_number"],
+            image_id=row["image_id"],
+            date_created=row["date_created"],
+            highlight_count=row["highlight_count"] or 0,
+            note_count=row["note_count"] or 0,
             reading_statistics=statistics,
         )
 
@@ -250,9 +214,9 @@ class KoboRepository:
         )
         return [
             ChapterRecord(
-                title=optional_text(row["title"]),
+                title=row["title"],
                 content_id=str(row["content_id"] or ""),
-                spine_index=optional_float(row["spine_index"]) or 0.0,
+                spine_index=row["spine_index"] or 0.0,
             )
             for row in self.connection.execute(query, (book_id,)).fetchall()
         ]
@@ -265,25 +229,25 @@ class KoboRepository:
         content_id = str(row["content_id"] or "")
         chapter, spine_index = resolve_chapter(chapters, content_id)
         return Annotation(
-            bookmark_id=optional_text(row["bookmark_id"]),
-            uuid=optional_text(row["uuid"]),
-            text=optional_text(row["text"]) or "",
-            note=optional_text(row["note"]) or "",
-            context_string=optional_text(row["context_string"]),
-            color_code=optional_int(row["color_code"]),
-            date_created=optional_text(row["date_created"]),
-            date_modified=optional_text(row["date_modified"]),
+            bookmark_id=row["bookmark_id"],
+            uuid=row["uuid"],
+            text=row["text"] or "",
+            note=row["note"] or "",
+            context_string=row["context_string"],
+            color_code=row["color_code"],
+            date_created=row["date_created"],
+            date_modified=row["date_modified"],
             location=AnnotationLocation(
                 content_id=content_id,
                 chapter=chapter,
                 spine_index=spine_index,
-                chapter_progress=optional_float(row["chapter_progress"]) or 0.0,
-                start_container_path=optional_text(row["start_container_path"]),
-                start_container_child_index=optional_int(row["start_container_child_index"]),
-                start_offset=optional_int(row["start_offset"]),
-                end_container_path=optional_text(row["end_container_path"]),
-                end_container_child_index=optional_int(row["end_container_child_index"]),
-                end_offset=optional_int(row["end_offset"]),
+                chapter_progress=row["chapter_progress"] or 0.0,
+                start_container_path=row["start_container_path"],
+                start_container_child_index=row["start_container_child_index"],
+                start_offset=row["start_offset"],
+                end_container_path=row["end_container_path"],
+                end_container_child_index=row["end_container_child_index"],
+                end_offset=row["end_offset"],
             ),
         )
 
