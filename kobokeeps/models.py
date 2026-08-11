@@ -42,6 +42,9 @@ class ReadingStatistics:
     last_time_finished_reading: str | None = None
     store_pages: int | None = None
     store_word_count: int | None = None
+    rest_of_book_estimate: float | int | None = None
+    store_time_to_read_lower_estimate: float | int | None = None
+    store_time_to_read_upper_estimate: float | int | None = None
     rating: float | int | None = None
     rating_date_modified: str | None = None
 
@@ -60,6 +63,9 @@ class Book:
     series: str | None = None
     series_number: str | float | int | None = None
     image_id: str | None = None
+    description: str | None = None
+    mime_type: str | None = None
+    external_id: str | None = None
     date_created: str | None = None
     highlight_count: int = 0
     note_count: int = 0
@@ -94,6 +100,8 @@ class Annotation:
     color_code: int | None
     date_created: str | None
     date_modified: str | None
+    version: str | None
+    annotation_type: str | None
     location: AnnotationLocation
 
     @property
