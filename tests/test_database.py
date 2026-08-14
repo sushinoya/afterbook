@@ -30,3 +30,14 @@ def test_annotations_follow_book_order(kobo_database: Path) -> None:
     ]
     assert annotations[2].location.chapter == "The Second Chapter"
     assert annotations[2].context_string == "Surrounding context for chapter two."
+
+
+def test_kobo_color_codes_use_native_order() -> None:
+    from kobokeeps.models import KOBO_HIGHLIGHT_PALETTE
+
+    assert [KOBO_HIGHLIGHT_PALETTE[index].name for index in range(4)] == [
+        "yellow",
+        "red",
+        "blue",
+        "green",
+    ]

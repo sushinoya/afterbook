@@ -110,7 +110,7 @@ KoboKeeps uses an allowlisted data model. Account credentials, sync tokens, DRM 
 
 ## Highlight colors
 
-`KoboReader.sqlite` stores highlight colors as integer codes rather than RGB values. KoboKeeps preserves the original integer and uses a reference palette matched to the four colors shown by Kobo's native reader interface.
+`KoboReader.sqlite` stores highlight colors as integer codes: 0 for yellow, 1 for red, 2 for blue, and 3 for green. It does not store RGB or hex values. KoboKeeps preserves the original integer in the archive and uses a reference palette chosen to resemble Kobo's native reader interface.
 
 ## Development
 
