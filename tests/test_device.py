@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
+from kobokeeps.database import open_database
 from kobokeeps.device import database_snapshot, discover_kobos, local_output_directory
 from kobokeeps.errors import KoboKeepsError
 
@@ -72,3 +75,24 @@ def test_allows_output_outside_kobo(tmp_path: Path) -> None:
     device.mkdir()
 
     assert local_output_directory(output, device) == output.resolve()
+
+
+def test_database_snapshot_includes_uncheckpointed_wal(tmp_path: Path) -> None:
+    database = tmp_path / "KoboReader.sqlite"
+    source = sqlite3.connect(database)
+    source.execute("PRAGMA journal_mode = WAL")
+    source.execute("PRAGMA wal_autocheckpoint = 0")
+    source.execute("CREATE TABLE annotations (text TEXT)")
+    source.commit()
+    source.execute("INSERT INTO annotations VALUES ('kept in wal')")
+    source.commit()
+
+    try:
+        assert Path(f"{database}-wal").is_file()
+        with database_snapshot(database) as snapshot:
+            with closing(open_database(snapshot)) as copied:
+                row = copied.execute("SELECT text FROM annotations").fetchone()
+        assert row is not None
+        assert row[0] == "kept in wal"
+    finally:
+        source.close()
