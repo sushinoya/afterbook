@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from kobokeeps.cover import load_cover
 from kobokeeps.database import KoboRepository, open_database
@@ -57,7 +57,10 @@ def print_books(books: list[Book]) -> None:
     """Print annotated books in a stable numbered list."""
     for index, book in enumerate(books, start=1):
         author = f" - {book.author}" if book.author else ""
-        print(f"{index:>3}. {book.title}{author} [{book.highlight_count} highlights, {book.note_count} notes]")
+        print(
+            f"{index:>3}. {book.title}{author} "
+            f"[{book.highlight_count} highlights, {book.note_count} notes]"
+        )
         print(f"     {book.content_id}")
 
 

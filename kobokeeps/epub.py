@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
-from html import escape
-from pathlib import Path
 import re
 import uuid
 import zipfile
+from collections import OrderedDict
+from html import escape
+from pathlib import Path
 
 from kobokeeps.archive import archive_json
 from kobokeeps.models import Annotation, Book, CoverImage, highlight_color
@@ -34,7 +34,8 @@ def safe_filename(value: str) -> str:
 def xhtml_document(title: str, body: str, language: str) -> bytes:
     """Build a small XHTML document."""
     document = f'''<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="{escape(language)}" lang="{escape(language)}">
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xml:lang="{escape(language)}" lang="{escape(language)}">
 <head>
   <title>{escape(title)}</title>
   <link rel="stylesheet" type="text/css" href="styles.css"/>
@@ -75,7 +76,8 @@ def title_document(book: Book, output_title: str, language: str) -> bytes:
     """Render the clipping book title page."""
     author = f"<p>{escape(book.author)}</p>" if book.author else ""
     counts = f"<p>{book.highlight_count} highlights | {book.note_count} notes</p>"
-    return xhtml_document(output_title, f"<h1>{escape(output_title)}</h1>{author}{counts}", language)
+    body = f"<h1>{escape(output_title)}</h1>{author}{counts}"
+    return xhtml_document(output_title, body, language)
 
 
 def cover_document(cover: CoverImage) -> bytes:
@@ -163,13 +165,17 @@ def package_document(
         metadata.append('<meta name="cover" content="cover-image"/>')
         manifest.extend(
             [
-                f'<item id="cover-image" href="cover.{cover.extension}" media-type="{cover.media_type}" properties="cover-image"/>',
+                (
+                    f'<item id="cover-image" href="cover.{cover.extension}" '
+                    f'media-type="{cover.media_type}" properties="cover-image"/>'
+                ),
                 '<item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml"/>',
             ]
         )
         spine.insert(0, '<itemref idref="cover-page"/>')
 
-    for index, (chapter, filename) in enumerate(chapters, start=1):
+    for index, chapter_entry in enumerate(chapters, start=1):
+        filename = chapter_entry[1]
         item_id = f"chapter-{index}"
         manifest.append(
             f'<item id="{item_id}" href="{filename}" media-type="application/xhtml+xml"/>'
@@ -208,7 +214,9 @@ def write_epub(
         archive.writestr("OEBPS/title.xhtml", title_document(book, output_title, language))
         archive.writestr("OEBPS/nav.xhtml", navigation_document(chapters, language))
         archive.writestr("OEBPS/archive/kobo-annotations.json", archive_json(book, annotations))
-        for (chapter_title, chapter_annotations), (_, filename) in zip(groups.items(), chapters):
+        for (chapter_title, chapter_annotations), (_, filename) in zip(
+            groups.items(), chapters, strict=True
+        ):
             archive.writestr(
                 f"OEBPS/{filename}",
                 chapter_document(chapter_title, chapter_annotations, language),

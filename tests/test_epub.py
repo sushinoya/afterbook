@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import zipfile
 from contextlib import closing
 from pathlib import Path
-import zipfile
 
 from kobokeeps.database import KoboRepository, open_database
 from kobokeeps.epub import write_epub

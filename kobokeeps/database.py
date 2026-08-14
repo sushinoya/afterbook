@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-import sqlite3
 
 from kobokeeps.errors import KoboKeepsError
 from kobokeeps.models import Annotation, AnnotationLocation, Book, ReadingStatistics
@@ -39,6 +39,7 @@ class ChapterRecord:
     title: str | None
     content_id: str
     spine_index: float
+
 
 BOOK_COLUMNS = {
     "title": "Title",
@@ -85,18 +86,15 @@ def table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in rows}
 
 
-
-def select_column(columns: set[str], column: str, alias: str) -> str:
+def select_optional_column(
+    columns: set[str],
+    column: str,
+    alias: str,
+    table_alias: str,
+) -> str:
     """Select a column when present and NULL otherwise."""
     if column in columns:
-        return f'c."{column}" AS "{alias}"'
-    return f'NULL AS "{alias}"'
-
-
-def select_bookmark_column(columns: set[str], column: str, alias: str) -> str:
-    """Select a bookmark column when present and NULL otherwise."""
-    if column in columns:
-        return f'b."{column}" AS "{alias}"'
+        return f'{table_alias}."{column}" AS "{alias}"'
     return f'NULL AS "{alias}"'
 
 
@@ -126,7 +124,7 @@ class KoboRepository:
             )
 
         book_fields = [
-            select_column(content_columns, column, alias)
+            select_optional_column(content_columns, column, alias, "c")
             for alias, column in BOOK_COLUMNS.items()
         ]
         query = f"""
@@ -182,11 +180,10 @@ class KoboRepository:
             reading_statistics=statistics,
         )
 
-
     def annotations_for(self, book: Book) -> list[Annotation]:
         bookmark_columns = table_columns(self.connection, "Bookmark")
         fields = [
-            select_bookmark_column(bookmark_columns, column, alias)
+            select_optional_column(bookmark_columns, column, alias, "b")
             for alias, column in ANNOTATION_COLUMNS.items()
         ]
         text_value = "TRIM(COALESCE(b.\"Text\", ''))" if "Text" in bookmark_columns else "''"

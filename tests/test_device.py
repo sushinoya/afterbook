@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from kobokeeps.device import database_snapshot, discover_kobos, local_output_directory
 from kobokeeps.errors import KoboKeepsError
 
@@ -57,8 +59,6 @@ def test_windows_mounts_filter_existing_drive_roots(tmp_path: Path) -> None:
 
 
 def test_rejects_output_on_kobo(tmp_path: Path) -> None:
-    import pytest
-
     device = tmp_path / "KOBOeReader"
     device.mkdir()
 

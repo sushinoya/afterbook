@@ -48,7 +48,8 @@ def interactive_book(books: list[Book]) -> Book:
         import questionary
     except ImportError as error:
         raise KoboKeepsError(
-            "Interactive selection requires Questionary. Install KoboKeeps normally or use a book number"
+            "Interactive selection requires Questionary. Install KoboKeeps normally "
+            "or use a book number"
         ) from error
 
     choices = [questionary.Choice(selection_label(book), value=book) for book in books]

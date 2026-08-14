@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import sys
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from collections.abc import Iterable, Iterator
-import sys
 
 from kobokeeps.errors import KoboKeepsError
 
@@ -30,21 +30,25 @@ def is_kobo_root(path: Path) -> bool:
     return (path / DATABASE_RELATIVE_PATH).is_file()
 
 
-def macos_mounts(volumes_root: Path = Path("/Volumes")) -> list[Path]:
+def macos_mounts(volumes_root: Path | None = None) -> list[Path]:
     """Return mounted volumes on macOS."""
-    if not volumes_root.is_dir():
+    root = volumes_root or Path("/Volumes")
+    if not root.is_dir():
         return []
-    return [path for path in volumes_root.iterdir() if path.is_dir()]
+    return [path for path in root.iterdir() if path.is_dir()]
 
 
 def linux_mounts(
-    home: Path = Path.home(),
-    media_root: Path = Path("/media"),
-    run_media_root: Path = Path("/run/media"),
+    home: Path | None = None,
+    media_root: Path | None = None,
+    run_media_root: Path | None = None,
 ) -> list[Path]:
     """Return common removable-media mounts on Linux."""
-    user = home.name
-    roots = (media_root / user, run_media_root / user)
+    user_home = home or Path.home()
+    media = media_root or Path("/media")
+    run_media = run_media_root or Path("/run/media")
+    user = user_home.name
+    roots = (media / user, run_media / user)
     mounts: list[Path] = []
     for root in roots:
         if root.is_dir():
@@ -54,7 +58,9 @@ def linux_mounts(
 
 def windows_mounts(candidates: Iterable[Path] | None = None) -> list[Path]:
     """Return mounted drive roots on Windows."""
-    drive_roots = candidates or (Path(f"{letter}:\\") for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    drive_roots = candidates or (
+        Path(f"{letter}:\\") for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    )
     return [path for path in drive_roots if path.is_dir()]
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -82,7 +82,10 @@ def kobo_database(tmp_path: Path) -> Path:
             LastTimeFinishedReading, StorePages, StoreWordCount,
             StoreTimeToReadLowerEstimate, StoreTimeToReadUpperEstimate, Rating,
             RatingDateModified
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )
         """,
         (
             book_id,

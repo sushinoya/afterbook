@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from contextlib import closing
 import json
+from contextlib import closing
 from pathlib import Path
 
 from kobokeeps.archive import archive_json
