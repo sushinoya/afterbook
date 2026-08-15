@@ -86,17 +86,6 @@ def table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in rows}
 
 
-def select_optional_column(
-    columns: set[str],
-    column: str,
-    alias: str,
-    table_alias: str,
-) -> str:
-    """Select a column when present and NULL otherwise."""
-    if column in columns:
-        return f'{table_alias}."{column}" AS "{alias}"'
-    return f'NULL AS "{alias}"'
-
 
 @dataclass(slots=True)
 class KoboRepository:
@@ -109,6 +98,8 @@ class KoboRepository:
         content_columns = table_columns(self.connection, "content")
         if "VolumeID" not in bookmark_columns:
             raise KoboKeepsError("Unsupported Kobo database: Bookmark.VolumeID is missing")
+        if "ContentID" not in content_columns:
+            raise KoboKeepsError("Unsupported Kobo database: content.ContentID is missing")
 
         text_value = 'TRIM(COALESCE(b."Text", \'\'))' if "Text" in bookmark_columns else "''"
         note_value = (
@@ -124,9 +115,10 @@ class KoboRepository:
             )
 
         book_fields = [
-            select_optional_column(content_columns, column, alias, "c")
+            f'c."{column}" AS "{alias}"' if column in content_columns else f'NULL AS "{alias}"'
             for alias, column in BOOK_COLUMNS.items()
         ]
+        title_sort = 'c."Title"' if "Title" in content_columns else "a.content_id"
         query = f"""
             WITH annotated_books AS (
                 SELECT b."VolumeID" AS content_id,
@@ -139,7 +131,7 @@ class KoboRepository:
             SELECT a.content_id, a.highlight_count, a.note_count, {', '.join(book_fields)}
             FROM annotated_books a
             LEFT JOIN content c ON c."ContentID" = a.content_id
-            ORDER BY COALESCE(c."Title", a.content_id) COLLATE NOCASE
+            ORDER BY COALESCE({title_sort}, a.content_id) COLLATE NOCASE
         """
         return [self.book_from_row(row) for row in self.connection.execute(query).fetchall()]
 
@@ -183,7 +175,9 @@ class KoboRepository:
     def annotations_for(self, book: Book) -> list[Annotation]:
         bookmark_columns = table_columns(self.connection, "Bookmark")
         fields = [
-            select_optional_column(bookmark_columns, column, alias, "b")
+            f'b."{column}" AS "{alias}"'
+            if column in bookmark_columns
+            else f'NULL AS "{alias}"'
             for alias, column in ANNOTATION_COLUMNS.items()
         ]
         text_value = "TRIM(COALESCE(b.\"Text\", ''))" if "Text" in bookmark_columns else "''"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from contextlib import closing
 from pathlib import Path
 
@@ -41,3 +42,29 @@ def test_kobo_color_codes_use_native_order() -> None:
         "blue",
         "green",
     ]
+
+
+def test_missing_optional_columns_are_tolerated(tmp_path: Path) -> None:
+    database = tmp_path / "minimal.sqlite"
+    connection = sqlite3.connect(database)
+    connection.executescript(
+        """
+        CREATE TABLE content (ContentID TEXT PRIMARY KEY);
+        CREATE TABLE Bookmark (VolumeID TEXT, Text TEXT);
+        INSERT INTO content VALUES ('book-id');
+        INSERT INTO Bookmark VALUES ('book-id', 'A passage');
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    with closing(open_database(database)) as copied:
+        repository = KoboRepository(copied)
+        book = repository.list_books()[0]
+        annotations = repository.annotations_for(book)
+
+    assert book.title == "Untitled"
+    assert book.author is None
+    assert book.highlight_count == 1
+    assert annotations[0].text == "A passage"
+    assert annotations[0].color_code is None
