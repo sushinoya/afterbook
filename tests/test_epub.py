@@ -6,7 +6,7 @@ from contextlib import closing
 from pathlib import Path
 
 from kobokeeps.database import KoboRepository, open_database
-from kobokeeps.epub import write_epub
+from kobokeeps.epub import safe_filename, write_epub
 from kobokeeps.models import KOBO_HIGHLIGHT_PALETTE
 
 
@@ -143,3 +143,9 @@ def test_cover_manifest_marks_svg_page(kobo_database: Path, tmp_path: Path) -> N
     assert cover_image.attrib["properties"] == "cover-image"
     assert cover_page is not None
     assert cover_page.attrib["properties"] == "svg"
+
+
+def test_safe_filename_is_portable() -> None:
+    assert safe_filename('Bad: <book>?') == "Bad book"
+    assert safe_filename("CON") == "CON Book"
+    assert len(safe_filename("x" * 300)) == 180

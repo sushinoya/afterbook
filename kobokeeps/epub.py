@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -11,6 +12,16 @@ from pathlib import Path
 
 from kobokeeps.archive import archive_json
 from kobokeeps.models import Annotation, Book, CoverImage, highlight_color
+
+MAX_FILENAME_LENGTH = 180
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
 
 EPUB_CSS = """
 body { font-family: serif; line-height: 1.5; margin: 5%; }
@@ -34,7 +45,12 @@ h1 { margin-bottom: 1.5em; }
 
 def safe_filename(value: str) -> str:
     """Create a portable filename from a book title."""
-    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", value).strip().rstrip(".")
+    normalized = unicodedata.normalize("NFC", value)
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", normalized)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    if cleaned.upper() in WINDOWS_RESERVED_NAMES:
+        cleaned = f"{cleaned} Book"
+    cleaned = cleaned[:MAX_FILENAME_LENGTH].rstrip(" .")
     return cleaned or "My Clippings"
 
 
