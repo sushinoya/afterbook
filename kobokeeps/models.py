@@ -14,10 +14,10 @@ class HighlightColor:
 
 
 KOBO_HIGHLIGHT_PALETTE: dict[int, HighlightColor] = {
-    0: HighlightColor("yellow", "#F5E77A"),
-    1: HighlightColor("red", "#F1A0A5"),
-    2: HighlightColor("blue", "#9CCDEB"),
-    3: HighlightColor("green", "#A9D79B"),
+    0: HighlightColor("yellow", "#F8E98A"),
+    1: HighlightColor("pink", "#ECA6C4"),
+    2: HighlightColor("blue", "#9DD9E2"),
+    3: HighlightColor("green", "#C4DC88"),
 }
 DEFAULT_HIGHLIGHT_COLOR = HighlightColor("gray", "#D9D9D9")
 

@@ -38,7 +38,7 @@ def test_kobo_color_codes_use_native_order() -> None:
 
     assert [KOBO_HIGHLIGHT_PALETTE[index].name for index in range(4)] == [
         "yellow",
-        "red",
+        "pink",
         "blue",
         "green",
     ]
