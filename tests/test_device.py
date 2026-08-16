@@ -89,9 +89,8 @@ def test_database_snapshot_includes_uncheckpointed_wal(tmp_path: Path) -> None:
 
     try:
         assert Path(f"{database}-wal").is_file()
-        with database_snapshot(database) as snapshot:
-            with closing(open_database(snapshot)) as copied:
-                row = copied.execute("SELECT text FROM annotations").fetchone()
+        with database_snapshot(database) as snapshot, closing(open_database(snapshot)) as copied:
+            row = copied.execute("SELECT text FROM annotations").fetchone()
         assert row is not None
         assert row[0] == "kept in wal"
     finally:
