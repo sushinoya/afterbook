@@ -86,7 +86,6 @@ def table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in rows}
 
 
-
 @dataclass(slots=True)
 class KoboRepository:
     """Queries Kobo annotation data from a local database snapshot."""
