@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kobokeeps"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Turn Kobo highlights and notes into personal books you can keep"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -45,6 +45,9 @@ dev = [
 
 [tool.setuptools]
 packages = ["kobokeeps"]
+
+[tool.setuptools.dynamic]
+version = { attr = "kobokeeps.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

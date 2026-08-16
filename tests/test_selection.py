@@ -25,3 +25,12 @@ def test_selects_book_by_exact_title() -> None:
 def test_rejects_invalid_book_number() -> None:
     with pytest.raises(KoboKeepsError):
         book_by_number(books(), 3)
+
+
+def test_cli_version_does_not_require_device(capsys: pytest.CaptureFixture[str]) -> None:
+    from kobokeeps.cli import run
+
+    with pytest.raises(SystemExit, match="0"):
+        run(["--version"])
+
+    assert capsys.readouterr().out.strip() == "kobokeeps 0.2.0"

@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from kobokeeps import __version__
 from kobokeeps.cover import load_cover
 from kobokeeps.database import KoboRepository, open_database
 from kobokeeps.device import database_snapshot, local_output_directory, select_device
@@ -25,6 +26,9 @@ def parser() -> argparse.ArgumentParser:
     argument_parser = argparse.ArgumentParser(
         prog="kobokeeps",
         description="Turn Kobo highlights and notes into personal books you can keep.",
+    )
+    argument_parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
     )
     argument_parser.add_argument("--device", type=Path, help="Path to a mounted Kobo eReader")
     subparsers = argument_parser.add_subparsers(dest="command", required=True)

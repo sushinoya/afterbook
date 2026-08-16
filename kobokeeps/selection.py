@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from kobokeeps.errors import KoboKeepsError
 from kobokeeps.models import Book
 
@@ -53,12 +55,15 @@ def interactive_book(books: list[Book]) -> Book:
         ) from error
 
     choices = [questionary.Choice(selection_label(book), value=book) for book in books]
-    selected = questionary.select(
-        "Select a book",
-        choices=choices,
-        use_shortcuts=True,
-        use_arrow_keys=True,
-    ).ask()
+    selected = cast(
+        Book | None,
+        questionary.select(
+            "Select a book",
+            choices=choices,
+            use_shortcuts=True,
+            use_arrow_keys=True,
+        ).ask(),
+    )
     if selected is None:
         raise KoboKeepsError("Book selection cancelled")
     return selected
