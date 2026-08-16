@@ -16,20 +16,13 @@ from kobokeeps.models import Book
 from kobokeeps.selection import book_by_id, book_by_number, book_by_title, interactive_book
 
 
-def default_output_directory() -> Path:
-    """Return the default directory used for generated books."""
-    return Path.home() / "Documents" / "KoboKeeps"
-
-
 def parser() -> argparse.ArgumentParser:
     """Build the command line parser."""
     argument_parser = argparse.ArgumentParser(
         prog="kobokeeps",
         description="Turn Kobo highlights and notes into personal books you can keep.",
     )
-    argument_parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    argument_parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     argument_parser.add_argument("--device", type=Path, help="Path to a mounted Kobo eReader")
     subparsers = argument_parser.add_subparsers(dest="command", required=True)
 
@@ -39,7 +32,9 @@ def parser() -> argparse.ArgumentParser:
     export_parser.add_argument("number", nargs="?", type=int, help="Book number from the list")
     export_parser.add_argument("--book", help="Exact book title")
     export_parser.add_argument("--book-id", help="Kobo content identifier")
-    export_parser.add_argument("--output", type=Path, default=default_output_directory())
+    export_parser.add_argument(
+        "--output", type=Path, default=Path.home() / "Documents" / "KoboKeeps"
+    )
     return argument_parser
 
 

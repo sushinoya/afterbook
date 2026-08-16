@@ -23,6 +23,15 @@ WINDOWS_RESERVED_NAMES = {
     *(f"LPT{number}" for number in range(1, 10)),
 }
 
+
+CONTAINER_XML = b'''<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+'''
+
 EPUB_CSS = """
 body { font-family: serif; line-height: 1.5; margin: 5%; }
 h1 { margin-bottom: 1.5em; }
@@ -139,17 +148,6 @@ def cover_document(cover: CoverImage) -> bytes:
 </html>
 '''
     return document.encode("utf-8")
-
-
-def container_document() -> bytes:
-    """Return the EPUB container document."""
-    return b'''<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>
-'''
 
 
 def navigation_document(chapters: list[tuple[str, str]], language: str) -> bytes:
@@ -296,7 +294,7 @@ def write_epub(
 
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
-        archive.writestr("META-INF/container.xml", container_document())
+        archive.writestr("META-INF/container.xml", CONTAINER_XML)
         archive.writestr("OEBPS/styles.css", EPUB_CSS)
         archive.writestr("OEBPS/title.xhtml", title_document(book, output_title, language))
         archive.writestr("OEBPS/nav.xhtml", navigation_document(chapters, language))
