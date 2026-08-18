@@ -176,3 +176,31 @@ def test_safe_filename_is_portable() -> None:
     assert safe_filename('Bad: <book>?') == "Bad book"
     assert safe_filename("CON") == "CON Book"
     assert len(safe_filename("x" * 300)) == 180
+
+
+def test_loads_cached_kobo_cover(tmp_path: Path) -> None:
+    from kobokeeps.cover import load_cover, qt_hash
+
+    image_id = "cover-id"
+    image_hash = qt_hash(image_id.encode("utf-8"))
+    cache = (
+        tmp_path
+        / ".kobo-images"
+        / str(image_hash & 0xFF)
+        / str((image_hash & 0xFF00) >> 8)
+    )
+    cache.mkdir(parents=True)
+    cover_path = cache / f"{image_id} - N3_FULL.parsed"
+    cover_path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\x0dIHDR"
+        + (1264).to_bytes(4, "big")
+        + (1680).to_bytes(4, "big")
+    )
+
+    cover = load_cover(tmp_path, image_id)
+
+    assert cover is not None
+    assert cover.media_type == "image/png"
+    assert cover.extension == "png"
+    assert (cover.width, cover.height) == (1264, 1680)
