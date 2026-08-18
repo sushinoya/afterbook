@@ -102,8 +102,7 @@ def chapter_document(chapter: str, annotations: list[Annotation], language: str)
             color = highlight_color(annotation.color_code)
             parts.append(
                 '<p class="highlight"><span class="highlight-text" '
-                f'style="background: {color.hex_value}; '
-                f'background-color: {color.hex_value};">'
+                f'style="background-color: {color.hex_value};">'
                 f"{escape(annotation.text)}</span></p>"
             )
         if annotation.note:
@@ -115,7 +114,12 @@ def chapter_document(chapter: str, annotations: list[Annotation], language: str)
 def title_document(book: Book, output_title: str, language: str) -> bytes:
     """Render the clipping book title page."""
     author = f"<p>{escape(book.author)}</p>" if book.author else ""
-    counts = f"<p>{book.highlight_count} highlights | {book.note_count} notes</p>"
+    highlight_word = "highlight" if book.highlight_count == 1 else "highlights"
+    note_word = "note" if book.note_count == 1 else "notes"
+    counts = (
+        f"<p>{book.highlight_count} {highlight_word} · "
+        f"{book.note_count} {note_word}</p>"
+    )
     body = f"<h1>{escape(output_title)}</h1>{author}{counts}"
     return xhtml_document(output_title, body, language)
 

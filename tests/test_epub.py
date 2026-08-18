@@ -26,10 +26,37 @@ def test_epub_contains_colored_highlights(kobo_database: Path, tmp_path: Path) -
         chapter_one = epub.read("OEBPS/chapter-1.xhtml").decode()
         chapter_two = epub.read("OEBPS/chapter-2.xhtml").decode()
 
-    assert KOBO_HIGHLIGHT_PALETTE[0].hex_value in chapter_one
-    assert KOBO_HIGHLIGHT_PALETTE[1].hex_value in chapter_one
-    assert KOBO_HIGHLIGHT_PALETTE[2].hex_value in chapter_two
-    assert KOBO_HIGHLIGHT_PALETTE[3].hex_value in chapter_two
+    assert (
+        f'style="background-color: {KOBO_HIGHLIGHT_PALETTE[0].hex_value};">'
+        "A yellow passage from chapter one.</span>"
+    ) in chapter_one
+    assert (
+        f'style="background-color: {KOBO_HIGHLIGHT_PALETTE[1].hex_value};">'
+        "A pink passage.</span>"
+    ) in chapter_one
+    assert (
+        f'style="background-color: {KOBO_HIGHLIGHT_PALETTE[2].hex_value};">'
+        "A blue passage from chapter two.</span>"
+    ) in chapter_two
+    assert (
+        f'style="background-color: {KOBO_HIGHLIGHT_PALETTE[3].hex_value};">'
+        "A green passage.</span>"
+    ) in chapter_two
+
+
+def test_title_page_is_minimal(kobo_database: Path, tmp_path: Path) -> None:
+    book, annotations = load_book(kobo_database)
+    output = write_epub(book, annotations, tmp_path)
+
+    with zipfile.ZipFile(output) as epub:
+        title_page = epub.read("OEBPS/title.xhtml").decode()
+
+    assert "Why Fish Don&#x27;t Exist - My Clippings" in title_page
+    assert "Lulu Miller" in title_page
+    assert "4 highlights · 1 note" in title_page
+    assert "Simon &amp; Schuster" not in title_page
+    assert "9781501160370" not in title_page
+    assert "Personal clipping companion" not in title_page
 
 
 def test_epub_stores_mimetype_first_and_uncompressed(kobo_database: Path, tmp_path: Path) -> None:
