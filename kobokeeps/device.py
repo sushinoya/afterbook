@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -42,17 +43,26 @@ def linux_mounts(
     home: Path | None = None,
     media_root: Path | None = None,
     run_media_root: Path | None = None,
+    mnt_root: Path | None = None,
 ) -> list[Path]:
     """Return common removable-media mounts on Linux."""
-    user_home = home or Path.home()
+    user = (home or Path.home()).name
     media = media_root or Path("/media")
     run_media = run_media_root or Path("/run/media")
-    user = user_home.name
-    roots = (media / user, run_media / user)
+    mnt = mnt_root or Path("/mnt")
+    roots = (media / user, run_media / user, media, run_media, mnt)
+
     mounts: list[Path] = []
+    seen: set[Path] = set()
+    user_directories = {media / user, run_media / user}
     for root in roots:
-        if root.is_dir():
-            mounts.extend(path for path in root.iterdir() if path.is_dir())
+        if not root.is_dir():
+            continue
+        for path in root.iterdir():
+            if path in user_directories or not path.is_dir() or path in seen:
+                continue
+            mounts.append(path)
+            seen.add(path)
     return mounts
 
 
@@ -113,24 +123,17 @@ def local_output_directory(output_directory: Path, device_root: Path) -> Path:
     return resolved_output
 
 
-def copy_binary_file(source: Path, destination: Path) -> None:
-    """Copy a file without changing source metadata or opening it for writing."""
-    with source.open("rb") as source_file, destination.open("xb") as destination_file:
-        while chunk := source_file.read(1024 * 1024):
-            destination_file.write(chunk)
-
-
 @contextmanager
 def database_snapshot(database_path: Path) -> Iterator[Path]:
     """Copy a Kobo database to local temporary storage before SQLite opens it."""
     with TemporaryDirectory(prefix="kobokeeps-") as temporary_directory:
         snapshot_root = Path(temporary_directory)
         snapshot_database = snapshot_root / database_path.name
-        copy_binary_file(database_path, snapshot_database)
+        shutil.copyfile(database_path, snapshot_database)
 
         for suffix in ("-wal", "-shm"):
             source_sidecar = Path(f"{database_path}{suffix}")
             if source_sidecar.is_file():
-                copy_binary_file(source_sidecar, snapshot_root / source_sidecar.name)
+                shutil.copyfile(source_sidecar, snapshot_root / source_sidecar.name)
 
         yield snapshot_database
