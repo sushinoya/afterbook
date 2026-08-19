@@ -1,10 +1,12 @@
 # KoboKeeps
 
-Turn Kobo highlights and notes into personal books you can keep.
+[![CI](https://github.com/sushinoya/kobo-keeps/actions/workflows/ci.yml/badge.svg)](https://github.com/sushinoya/kobo-keeps/actions/workflows/ci.yml)
 
-KoboKeeps reads the annotations stored on a Kobo eReader and builds a standalone EPUB for each book. It is especially useful for library loans and other temporary books: when the source book leaves your Kobo, the passages and notes you chose to keep can remain as a small personal book in your library.
+Keep the parts of a Kobo book that mattered to you.
 
-KoboKeeps does not copy or decrypt the source ebook. It only reads annotation data, book metadata, and the cached cover already stored by Kobo.
+KoboKeeps turns your Kobo highlights and notes into a small personal book that you can keep in your library. It is particularly useful for OverDrive and Libby loans: export your annotations before the loan disappears, then keep the generated EPUB for as long as you want.
+
+KoboKeeps does not copy or decrypt the source ebook. It reads annotation data, book metadata, and the cached cover already stored by Kobo.
 
 <details>
 <summary>Disclaimer</summary>
@@ -17,40 +19,51 @@ PRs are welcome, AI-assisted or not. Please review and test your changes before 
 
 ## Features
 
-- Export highlights and notes as a standalone EPUB
-- Keep the original reading order and chapter grouping
-- Preserve Kobo highlight colors
-- Reuse the cached book cover when available
-- Preserve source metadata and annotation locations in a hidden JSON archive
-- Select a book interactively with arrow keys or by number
-- Read the Kobo database through a local temporary snapshot
-- Never modify the Kobo database
+- Creates a standalone EPUB from highlights and notes
+- Preserves the source book's chapter order
+- Renders highlights using the corresponding Kobo color slot
+- Reuses the original cached cover when available
+- Keeps notes directly with the passage they belong to
+- Embeds a machine-readable archive of Kobo annotation metadata
+- Offers an interactive arrow-key book picker
+- Supports macOS, Linux, and Windows
+- Never writes to the connected Kobo
 
-## Installation
+## Install
 
-KoboKeeps requires Python 3.10 or newer. `pipx` is recommended for installing the command line application.
+KoboKeeps requires Python 3.10 or newer. [pipx](https://pipx.pypa.io/) is recommended for command line applications.
+
+Install directly from GitHub:
 
 ```console
-pipx install .
+pipx install git+https://github.com/sushinoya/kobo-keeps.git
 ```
 
-For development:
+Or clone the repository and install locally:
 
 ```console
-python -m pip install -e ".[dev]"
+git clone https://github.com/sushinoya/kobo-keeps.git
+cd kobo-keeps
+pipx install .
 ```
 
 ## Usage
 
-Connect the Kobo by USB and choose **Connect** on the eReader.
+Connect your Kobo over USB and tap **Connect** on the eReader.
 
-List books with highlights or notes:
+The simplest workflow is:
+
+```console
+kobokeeps export
+```
+
+KoboKeeps shows the annotated books on the device. Use the arrow keys to choose one and press Enter.
+
+You can also inspect the numbered list first:
 
 ```console
 kobokeeps list
 ```
-
-Example:
 
 ```text
   1. Why Fish Don't Exist - Lulu Miller [246 highlights, 17 notes]
@@ -59,80 +72,117 @@ Example:
      file:///mnt/onboard/Walker, Matthew/Why We Sleep - Matthew Walker.kepub.epub
 ```
 
-Export a book with the interactive picker:
-
-```console
-kobokeeps export
-```
-
-You can also select a book directly:
+Then export by number:
 
 ```console
 kobokeeps export 2
+```
+
+For scripts, exact title and Kobo content ID selectors are also available:
+
+```console
 kobokeeps export --book "Why We Sleep"
 kobokeeps export --book-id "file:///mnt/onboard/Walker, Matthew/Why We Sleep - Matthew Walker.kepub.epub"
 ```
 
-Generated books are written to `~/Documents/KoboKeeps` by default.
+Books are written to `~/Documents/KoboKeeps` by default. Choose another local directory with `--output`:
+
+```console
+kobokeeps export --output ~/Books/KoboKeeps
+```
+
+If automatic device discovery does not find your Kobo, provide its mount point explicitly:
+
+```console
+kobokeeps --device /Volumes/KOBOeReader export
+```
+
+## What the generated book contains
+
+A generated book is named `<Book Title> - My Clippings.epub` and contains:
+
+- the cached source cover, when available
+- a minimal title page
+- chapter headings in source order
+- the exact passages you highlighted
+- the original highlight color slot
+- your notes, directly below their passage
+- a navigation table of contents
+
+Visible clipping pages intentionally omit annotation timestamps and percentage-through-chapter information.
 
 ## Library loans
 
-KoboKeeps is designed to work with annotation records for books currently present on the Kobo, including OverDrive and Libby loans. Export the annotations before the loan is removed from the device.
+KoboKeeps works from annotation records that are still present on the device, including records for OverDrive and Libby loans. Export before returning the book or before Kobo removes the expired loan.
 
-The generated EPUB contains only the passages you highlighted, your notes, and descriptive metadata. It does not contain the rest of the borrowed ebook.
+The resulting EPUB contains the passages you selected and the notes you wrote. It does not contain the rest of the borrowed ebook.
 
 ## Read-only device access
 
-KoboKeeps never opens `KoboReader.sqlite` with SQLite while the database is on the Kobo. It performs a binary read of the database and any existing WAL or SHM sidecars, copies them to temporary storage on the computer, and runs all SQLite queries against that local snapshot.
+KoboKeeps treats the Kobo as a source only.
 
-The Kobo is treated as a source only. KoboKeeps does not write EPUBs, database changes, journals, or any other files to the device.
+`KoboReader.sqlite` is never opened with SQLite while it is on the device. KoboKeeps copies the database and any existing WAL or SHM sidecars into temporary storage on your computer, then runs all database queries against that local snapshot.
+
+The output path is also checked so an export cannot be written inside the mounted Kobo filesystem.
 
 ## Annotation archive
 
-Every generated EPUB contains:
+Each generated EPUB contains a hidden machine-readable file at:
 
 ```text
 OEBPS/archive/kobo-annotations.json
 ```
 
-The archive is not included in the table of contents or reading spine. It preserves the source metadata and annotation information needed for future migrations, including:
+It is not part of the reading spine or table of contents. The archive preserves useful source information for future migration or reprocessing, including:
 
 - selected text and notes
-- original Kobo color code
+- the original Kobo color integer
 - annotation identifiers
 - creation and modification timestamps
 - chapter and book position
 - exact start and end container paths and offsets
-- `ContextString` when Kobo stores it
+- `ContextString` when Kobo provides it
 - reading statistics and rating when available
+- source book metadata
 
-KoboKeeps uses an allowlisted data model. Account credentials, sync tokens, DRM data, and other private Kobo state are not copied into the archive.
+The archive is built from an explicit data model. Kobo account credentials, authentication state, sync tokens, DRM data, and other unrelated device state are not copied.
 
 ## Highlight colors
 
-`KoboReader.sqlite` stores highlight colors as integer codes rather than RGB or hex values. KoboKeeps preserves that original integer in the archive and uses a reference yellow, pink, blue, and green palette chosen to resemble Kobo's native reader interface.
+Kobo stores highlight colors in `KoboReader.sqlite` as integer slots rather than RGB or hex values. KoboKeeps preserves the original integer in the archive and maps the four color slots to a reference yellow, pink, blue, and green palette for the generated EPUB.
+
+The reference palette is intended to resemble Kobo's native reader colors. It is not claimed to be an RGB value extracted from the Kobo database.
+
+## Platform support
+
+| Platform | Automatic discovery |
+| --- | --- |
+| macOS | Mounted volumes under `/Volumes` |
+| Linux | Common mounts under `/media`, `/run/media`, and `/mnt` |
+| Windows | Mounted drive letters |
+
+Use `--device` on any platform when your Kobo is mounted somewhere else.
 
 ## Development
 
-Run the tests:
+Create an environment and install the development dependencies:
+
+```console
+python -m pip install -e ".[dev]"
+```
+
+Run the quality checks:
 
 ```console
 python -m pytest
-```
-
-Run the linter and formatter checks:
-
-```console
 ruff check .
 ruff format --check .
-```
-
-Run type checking:
-
-```console
 mypy kobokeeps
+python -m build
 ```
+
+The test suite uses synthetic Kobo databases and never requires a connected eReader.
 
 ## License
 
-MIT
+[MIT](LICENSE)

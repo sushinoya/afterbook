@@ -5,7 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kobokeeps"
 dynamic = ["version"]
-description = "Turn Kobo highlights and notes into personal books you can keep"
+description = "Preserve Kobo highlights and notes as personal books you can keep"
+keywords = ["kobo", "epub", "highlights", "annotations", "overdrive", "libby"]
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -16,9 +17,10 @@ dependencies = [
     "questionary>=2.0,<3",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

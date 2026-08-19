@@ -33,4 +33,4 @@ def test_cli_version_does_not_require_device(capsys: pytest.CaptureFixture[str])
     with pytest.raises(SystemExit, match="0"):
         run(["--version"])
 
-    assert capsys.readouterr().out.strip() == "kobokeeps 0.2.0"
+    assert capsys.readouterr().out.strip() == "kobokeeps 1.0.0"
