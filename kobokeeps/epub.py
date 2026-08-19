@@ -117,7 +117,7 @@ def title_document(book: Book, output_title: str, language: str) -> bytes:
     highlight_word = "highlight" if book.highlight_count == 1 else "highlights"
     note_word = "note" if book.note_count == 1 else "notes"
     counts = (
-        f"<p>{book.highlight_count} {highlight_word} · "
+        f"<p>{book.highlight_count} {highlight_word}, "
         f"{book.note_count} {note_word}</p>"
     )
     body = f"<h1>{escape(output_title)}</h1>{author}{counts}"

@@ -53,7 +53,7 @@ def test_title_page_is_minimal(kobo_database: Path, tmp_path: Path) -> None:
 
     assert "Why Fish Don&#x27;t Exist - My Clippings" in title_page
     assert "Lulu Miller" in title_page
-    assert "4 highlights · 1 note" in title_page
+    assert "4 highlights, 1 note" in title_page
     assert "Simon &amp; Schuster" not in title_page
     assert "9781501160370" not in title_page
     assert "Personal clipping companion" not in title_page
