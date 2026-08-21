@@ -9,7 +9,6 @@ from pathlib import Path
 from kobokeeps.errors import KoboKeepsError
 from kobokeeps.models import Annotation, AnnotationLocation, Book, ReadingStatistics
 
-
 ANNOTATION_COLUMNS = {
     "bookmark_id": "BookmarkID",
     "uuid": "UUID",
