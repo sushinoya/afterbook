@@ -7,7 +7,7 @@ from pathlib import Path
 
 from kobokeeps.database import KoboRepository, open_database
 from kobokeeps.epub import safe_filename, write_epub
-from kobokeeps.epub_documents import cover_document
+from kobokeeps.epub_utils import cover_document
 from kobokeeps.models import KOBO_HIGHLIGHT_PALETTE
 
 

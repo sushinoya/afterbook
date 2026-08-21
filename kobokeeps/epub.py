@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from kobokeeps.archive import archive_json
-from kobokeeps.epub_documents import (
+from kobokeeps.epub_utils import (
     STYLESHEET,
     chapter_document,
     container_document,
