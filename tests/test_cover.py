@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from kobokeeps.cover import (
-    KOBO_COVER_VARIANTS,
+    COVER_VARIANT_PRIORITY,
     cached_cover_path,
-    cover_cache_shard,
-    image_metadata,
+    cover_cache_directory,
+    cover_cache_filename,
     load_cover,
 )
 
@@ -22,9 +22,11 @@ def png_bytes(width: int, height: int) -> bytes:
 
 def test_loads_cached_kobo_cover(tmp_path: Path) -> None:
     image_id = "cover-id"
-    cache = cover_cache_shard(tmp_path / ".kobo-images", image_id)
-    cache.mkdir(parents=True)
-    cover_path = cache / f"{image_id} - {KOBO_COVER_VARIANTS[0]}.parsed"
+    cache_directory = cover_cache_directory(tmp_path, image_id)
+    cache_directory.mkdir(parents=True)
+    cover_path = cache_directory / cover_cache_filename(
+        image_id, COVER_VARIANT_PRIORITY[0]
+    )
     cover_path.write_bytes(png_bytes(1264, 1680))
 
     cover = load_cover(tmp_path, image_id)
@@ -37,15 +39,23 @@ def test_loads_cached_kobo_cover(tmp_path: Path) -> None:
 
 def test_prefers_full_size_cached_cover(tmp_path: Path) -> None:
     image_id = "cover-id"
-    cache = cover_cache_shard(tmp_path / ".kobo-images", image_id)
-    cache.mkdir(parents=True)
-    grid = cache / f"{image_id} - N3_LIBRARY_GRID.parsed"
-    full = cache / f"{image_id} - N3_FULL.parsed"
+    cache_directory = cover_cache_directory(tmp_path, image_id)
+    cache_directory.mkdir(parents=True)
+    grid = cache_directory / cover_cache_filename(image_id, "N3_LIBRARY_GRID")
+    full = cache_directory / cover_cache_filename(image_id, "N3_FULL")
     grid.write_bytes(png_bytes(400, 600))
     full.write_bytes(png_bytes(1200, 1800))
 
     assert cached_cover_path(tmp_path, image_id) == full
 
 
-def test_unknown_cached_image_format_is_not_guessed() -> None:
-    assert image_metadata(b"not an image") is None
+def test_uses_largest_unknown_variant_as_fallback(tmp_path: Path) -> None:
+    image_id = "cover-id"
+    cache_directory = cover_cache_directory(tmp_path, image_id)
+    cache_directory.mkdir(parents=True)
+    small = cache_directory / cover_cache_filename(image_id, "UNKNOWN_SMALL")
+    large = cache_directory / cover_cache_filename(image_id, "UNKNOWN_LARGE")
+    small.write_bytes(png_bytes(400, 600))
+    large.write_bytes(png_bytes(1200, 1800) + b"larger cached variant")
+
+    assert cached_cover_path(tmp_path, image_id) == large
