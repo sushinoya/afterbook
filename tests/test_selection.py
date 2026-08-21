@@ -28,7 +28,9 @@ def test_rejects_invalid_book_number() -> None:
         book_by_number(books(), 3)
 
 
-def test_cli_version_does_not_require_device(capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_version_does_not_require_device(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     from kobokeeps.cli import run
 
     with pytest.raises(SystemExit, match="0"):

@@ -10,8 +10,7 @@ import pytest
 def kobo_database(tmp_path: Path) -> Path:
     database = tmp_path / "KoboReader.sqlite"
     connection = sqlite3.connect(database)
-    connection.executescript(
-        """
+    connection.executescript("""
         CREATE TABLE content (
             ContentID TEXT PRIMARY KEY,
             BookID TEXT,
@@ -68,8 +67,7 @@ def kobo_database(tmp_path: Path) -> Path:
             EndOffset INTEGER,
             Hidden TEXT
         );
-        """
-    )
+        """)
 
     book_id = "da59e6e5-b10a-409a-b476-94fa8c654816"
     connection.execute(

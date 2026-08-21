@@ -7,11 +7,17 @@ from pathlib import Path
 import pytest
 
 from kobokeeps.database import open_database
-from kobokeeps.device import database_snapshot, discover_kobos, local_output_directory
+from kobokeeps.device import (
+    database_snapshot,
+    discover_kobos,
+    local_output_directory,
+)
 from kobokeeps.errors import KoboKeepsError
 
 
-def test_database_snapshot_copies_database_and_sidecar(kobo_database: Path) -> None:
+def test_database_snapshot_copies_database_and_sidecar(
+    kobo_database: Path,
+) -> None:
     source_contents = kobo_database.read_bytes()
     source_wal = Path(f"{kobo_database}-wal")
     source_wal.write_bytes(b"wal-data")
@@ -104,7 +110,10 @@ def test_database_snapshot_includes_uncheckpointed_wal(tmp_path: Path) -> None:
 
     try:
         assert Path(f"{database}-wal").is_file()
-        with database_snapshot(database) as snapshot, closing(open_database(snapshot)) as copied:
+        with (
+            database_snapshot(database) as snapshot,
+            closing(open_database(snapshot)) as copied,
+        ):
             row = copied.execute("SELECT text FROM annotations").fetchone()
         assert row is not None
         assert row[0] == "kept in wal"

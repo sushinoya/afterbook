@@ -11,7 +11,10 @@ def test_lists_books_with_annotation_counts(kobo_database: Path) -> None:
     with closing(open_database(kobo_database)) as connection:
         books = KoboRepository(connection).list_books()
 
-    assert [book.title for book in books] == ["Why Fish Don't Exist", "Why We Sleep"]
+    assert [book.title for book in books] == [
+        "Why Fish Don't Exist",
+        "Why We Sleep",
+    ]
     assert books[0].highlight_count == 4
     assert books[0].note_count == 1
     assert books[0].reading_statistics.rating == 5
@@ -47,14 +50,12 @@ def test_kobo_color_codes_use_reference_palette() -> None:
 def test_missing_optional_columns_are_tolerated(tmp_path: Path) -> None:
     database = tmp_path / "minimal.sqlite"
     connection = sqlite3.connect(database)
-    connection.executescript(
-        """
+    connection.executescript("""
         CREATE TABLE content (ContentID TEXT PRIMARY KEY);
         CREATE TABLE Bookmark (VolumeID TEXT, Text TEXT);
         INSERT INTO content VALUES ('book-id');
         INSERT INTO Bookmark VALUES ('book-id', 'A passage');
-        """
-    )
+        """)
     connection.commit()
     connection.close()
 

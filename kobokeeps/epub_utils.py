@@ -82,9 +82,9 @@ def title_document(book: Book, output_title: str, language: str) -> bytes:
 
     highlight_word = "highlight" if book.highlight_count == 1 else "highlights"
     note_word = "note" if book.note_count == 1 else "notes"
-    ET.SubElement(body, "p").text = (
-        f"{book.highlight_count} {highlight_word}, {book.note_count} {note_word}"
-    )
+    ET.SubElement(
+        body, "p"
+    ).text = f"{book.highlight_count} {highlight_word}, {book.note_count} {note_word}"
     return xml_bytes(root)
 
 

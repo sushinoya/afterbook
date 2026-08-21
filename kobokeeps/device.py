@@ -68,9 +68,7 @@ def linux_mounts(
 
 def windows_mounts(candidates: Iterable[Path] | None = None) -> list[Path]:
     """Return mounted drive roots on Windows."""
-    drive_roots = candidates or (
-        Path(f"{letter}:\\") for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    )
+    drive_roots = candidates or (Path(f"{letter}:\\") for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     return [path for path in drive_roots if path.is_dir()]
 
 

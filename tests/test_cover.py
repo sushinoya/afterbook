@@ -24,9 +24,7 @@ def test_loads_cached_kobo_cover(tmp_path: Path) -> None:
     image_id = "cover-id"
     cache_directory = cover_cache_directory(tmp_path, image_id)
     cache_directory.mkdir(parents=True)
-    cover_path = cache_directory / cover_cache_filename(
-        image_id, COVER_VARIANT_PRIORITY[0]
-    )
+    cover_path = cache_directory / cover_cache_filename(image_id, COVER_VARIANT_PRIORITY[0])
     cover_path.write_bytes(png_bytes(1264, 1680))
 
     cover = load_cover(tmp_path, image_id)

@@ -13,7 +13,12 @@ def png_bytes(width: int, height: int) -> bytes:
 
 
 def test_reads_png_dimensions() -> None:
-    assert image_metadata(png_bytes(1264, 1680)) == ("image/png", "png", 1264, 1680)
+    assert image_metadata(png_bytes(1264, 1680)) == (
+        "image/png",
+        "png",
+        1264,
+        1680,
+    )
 
 
 def test_reads_gif_dimensions() -> None:

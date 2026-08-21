@@ -9,11 +9,20 @@ from pathlib import Path
 from kobokeeps import __version__
 from kobokeeps.cover import load_cover
 from kobokeeps.database import KoboRepository, open_database
-from kobokeeps.device import database_snapshot, local_output_directory, select_device
+from kobokeeps.device import (
+    database_snapshot,
+    local_output_directory,
+    select_device,
+)
 from kobokeeps.epub import write_epub
 from kobokeeps.errors import KoboKeepsError
 from kobokeeps.models import Book
-from kobokeeps.selection import book_by_id, book_by_number, book_by_title, interactive_book
+from kobokeeps.selection import (
+    book_by_id,
+    book_by_number,
+    book_by_title,
+    interactive_book,
+)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -40,7 +49,11 @@ def parser() -> argparse.ArgumentParser:
 
 def choose_book(arguments: argparse.Namespace, books: list[Book]) -> Book:
     """Resolve CLI selection arguments to one book."""
-    selectors = [arguments.number is not None, bool(arguments.book), bool(arguments.book_id)]
+    selectors = [
+        arguments.number is not None,
+        bool(arguments.book),
+        bool(arguments.book_id),
+    ]
     if sum(selectors) > 1:
         raise KoboKeepsError("Choose only one of a book number, --book, or --book-id")
     if arguments.number is not None:

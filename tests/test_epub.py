@@ -32,16 +32,14 @@ def test_epub_contains_colored_highlights(kobo_database: Path, tmp_path: Path) -
         "A yellow passage from chapter one.</span>"
     ) in chapter_one
     assert (
-        f'style="background-color: {KOBO_HIGHLIGHT_PALETTE[1].hex_value};">'
-        "A pink passage.</span>"
+        f'style="background-color: {KOBO_HIGHLIGHT_PALETTE[1].hex_value};">A pink passage.</span>'
     ) in chapter_one
     assert (
         f'style="background-color: {KOBO_HIGHLIGHT_PALETTE[2].hex_value};">'
         "A blue passage from chapter two.</span>"
     ) in chapter_two
     assert (
-        f'style="background-color: {KOBO_HIGHLIGHT_PALETTE[3].hex_value};">'
-        "A green passage.</span>"
+        f'style="background-color: {KOBO_HIGHLIGHT_PALETTE[3].hex_value};">A green passage.</span>'
     ) in chapter_two
 
 
@@ -76,10 +74,10 @@ def test_cover_page_is_full_page_and_centered() -> None:
     cover = CoverImage(b"image", "image/jpeg", "jpg", 1264, 1680)
     page = cover_document(cover).decode()
 
-    assert '@page { margin: 0; padding: 0; }' in page
+    assert "@page { margin: 0; padding: 0; }" in page
     assert 'viewBox="0 0 1264 1680"' in page
     assert 'preserveAspectRatio="xMidYMid meet"' in page
-    assert 'display: block; width: 100%; height: 100%' in page
+    assert "display: block; width: 100%; height: 100%" in page
     assert 'epub:type="cover"' in page
     assert 'meta name="viewport" content="width=1264, height=1680"' in page
 
@@ -90,9 +88,7 @@ def test_epub_does_not_show_annotation_timestamps(kobo_database: Path, tmp_path:
 
     with zipfile.ZipFile(output) as epub:
         visible_content = "\n".join(
-            epub.read(name).decode()
-            for name in epub.namelist()
-            if name.endswith(".xhtml")
+            epub.read(name).decode() for name in epub.namelist() if name.endswith(".xhtml")
         )
         archive = epub.read("OEBPS/archive/kobo-annotations.json").decode()
 
@@ -129,9 +125,7 @@ def test_epub_xml_documents_are_well_formed(kobo_database: Path, tmp_path: Path)
             ET.fromstring(epub.read(filename))
 
 
-def test_epub_package_contains_compatibility_metadata(
-    kobo_database: Path, tmp_path: Path
-) -> None:
+def test_epub_package_contains_compatibility_metadata(kobo_database: Path, tmp_path: Path) -> None:
     book, annotations = load_book(kobo_database)
     output = write_epub(book, annotations, tmp_path)
 
@@ -173,6 +167,6 @@ def test_cover_manifest_marks_svg_page(kobo_database: Path, tmp_path: Path) -> N
 
 
 def test_safe_filename_is_portable() -> None:
-    assert safe_filename('Bad: <book>?') == "Bad book"
+    assert safe_filename("Bad: <book>?") == "Bad book"
     assert safe_filename("CON") == "CON Book"
     assert len(safe_filename("x" * 300)) == 180

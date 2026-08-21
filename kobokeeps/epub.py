@@ -55,7 +55,9 @@ def safe_filename(value: str) -> str:
     return cleaned or "My Clippings"
 
 
-def grouped_annotations(annotations: list[Annotation]) -> list[tuple[str, list[Annotation]]]:
+def grouped_annotations(
+    annotations: list[Annotation],
+) -> list[tuple[str, list[Annotation]]]:
     """Group adjacent annotations by source chapter without changing their order."""
     groups: list[tuple[str, list[Annotation]]] = []
     previous_key: tuple[float, str] | None = None
@@ -89,8 +91,7 @@ def write_epub(
 
     groups = grouped_annotations(annotations)
     chapters = [
-        (title, f"chapter-{index}.xhtml")
-        for index, (title, _) in enumerate(groups, start=1)
+        (title, f"chapter-{index}.xhtml") for index, (title, _) in enumerate(groups, start=1)
     ]
     identifier = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, book.content_id + ':kobokeeps')}"
     modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

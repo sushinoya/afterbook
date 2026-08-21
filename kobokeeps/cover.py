@@ -37,12 +37,7 @@ def cover_cache_directory(kobo_root: Path, image_id: str) -> Path:
     image_hash = qt_hash(image_id.encode("utf-8"))
     first_directory = image_hash & HASH_DIRECTORY_MASK
     second_directory = (image_hash >> 8) & HASH_DIRECTORY_MASK
-    return (
-        kobo_root
-        / KOBO_IMAGE_CACHE_DIRECTORY
-        / str(first_directory)
-        / str(second_directory)
-    )
+    return kobo_root / KOBO_IMAGE_CACHE_DIRECTORY / str(first_directory) / str(second_directory)
 
 
 def cover_cache_filename(image_id: str, variant: str) -> str:

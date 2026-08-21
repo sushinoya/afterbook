@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kobokeeps.errors import KoboKeepsError
-from kobokeeps.models import Annotation, AnnotationLocation, Book, ReadingStatistics
+from kobokeeps.models import (
+    Annotation,
+    AnnotationLocation,
+    Book,
+    ReadingStatistics,
+)
 
 ANNOTATION_COLUMNS = {
     "bookmark_id": "BookmarkID",
@@ -99,21 +104,18 @@ class KoboRepository:
         if "ContentID" not in content_columns:
             raise KoboKeepsError("Unsupported Kobo database: content.ContentID is missing")
 
-        text_value = 'TRIM(COALESCE(b."Text", \'\'))' if "Text" in bookmark_columns else "''"
+        text_value = "TRIM(COALESCE(b.\"Text\", ''))" if "Text" in bookmark_columns else "''"
         note_value = (
-            'TRIM(COALESCE(b."Annotation", \'\'))'
-            if "Annotation" in bookmark_columns
-            else "''"
+            "TRIM(COALESCE(b.\"Annotation\", ''))" if "Annotation" in bookmark_columns else "''"
         )
         visible_condition = ""
         if "Hidden" in bookmark_columns:
             visible_condition = (
-                ' AND LOWER(COALESCE(CAST(b."Hidden" AS TEXT), \'false\')) '
-                "NOT IN ('true', '1')"
+                " AND LOWER(COALESCE(CAST(b.\"Hidden\" AS TEXT), 'false')) NOT IN ('true', '1')"
             )
 
         book_fields = [
-            f'c."{column}" AS "{alias}"' if column in content_columns else f'NULL AS "{alias}"'
+            (f'c."{column}" AS "{alias}"' if column in content_columns else f'NULL AS "{alias}"')
             for alias, column in BOOK_COLUMNS.items()
         ]
         title_sort = 'c."Title"' if "Title" in content_columns else "a.content_id"
@@ -126,7 +128,7 @@ class KoboRepository:
                 WHERE ({text_value} <> '' OR {note_value} <> ''){visible_condition}
                 GROUP BY b."VolumeID"
             )
-            SELECT a.content_id, a.highlight_count, a.note_count, {', '.join(book_fields)}
+            SELECT a.content_id, a.highlight_count, a.note_count, {", ".join(book_fields)}
             FROM annotated_books a
             LEFT JOIN content c ON c."ContentID" = a.content_id
             ORDER BY COALESCE({title_sort}, a.content_id) COLLATE NOCASE
@@ -173,16 +175,12 @@ class KoboRepository:
     def annotations_for(self, book: Book) -> list[Annotation]:
         bookmark_columns = table_columns(self.connection, "Bookmark")
         fields = [
-            f'b."{column}" AS "{alias}"'
-            if column in bookmark_columns
-            else f'NULL AS "{alias}"'
+            (f'b."{column}" AS "{alias}"' if column in bookmark_columns else f'NULL AS "{alias}"')
             for alias, column in ANNOTATION_COLUMNS.items()
         ]
         text_value = "TRIM(COALESCE(b.\"Text\", ''))" if "Text" in bookmark_columns else "''"
         note_value = (
-            "TRIM(COALESCE(b.\"Annotation\", ''))"
-            if "Annotation" in bookmark_columns
-            else "''"
+            "TRIM(COALESCE(b.\"Annotation\", ''))" if "Annotation" in bookmark_columns else "''"
         )
         conditions = [
             'b."VolumeID" = ?',
