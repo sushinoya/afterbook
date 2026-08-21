@@ -7,6 +7,7 @@ from pathlib import Path
 
 from kobokeeps.database import KoboRepository, open_database
 from kobokeeps.epub import safe_filename, write_epub
+from kobokeeps.epub_documents import cover_document
 from kobokeeps.models import KOBO_HIGHLIGHT_PALETTE
 
 
@@ -51,7 +52,7 @@ def test_title_page_is_minimal(kobo_database: Path, tmp_path: Path) -> None:
     with zipfile.ZipFile(output) as epub:
         title_page = epub.read("OEBPS/title.xhtml").decode()
 
-    assert "Why Fish Don&#x27;t Exist - My Clippings" in title_page
+    assert "Why Fish Don't Exist - My Clippings" in title_page
     assert "Lulu Miller" in title_page
     assert "4 highlights, 1 note" in title_page
     assert "Simon &amp; Schuster" not in title_page
@@ -70,7 +71,6 @@ def test_epub_stores_mimetype_first_and_uncompressed(kobo_database: Path, tmp_pa
 
 
 def test_cover_page_is_full_page_and_centered() -> None:
-    from kobokeeps.epub import cover_document
     from kobokeeps.models import CoverImage
 
     cover = CoverImage(b"image", "image/jpeg", "jpg", 1264, 1680)
