@@ -50,7 +50,7 @@ svg { display: block; width: 100%; height: 100%; margin: 0; padding: 0; }
 
 def xml_bytes(root: ET.Element) -> bytes:
     """Serialize an XML tree with the declaration EPUB readers expect."""
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)  # type: ignore [no-any-return]
 
 
 def xhtml_page(title: str, language: str) -> tuple[ET.Element, ET.Element]:
