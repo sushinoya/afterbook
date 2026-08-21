@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 - 2026-08-21
+
+- Fix Ruff import formatting and install test dependencies in the CI matrix
+- Separate Kobo cover discovery from generic image parsing
+- Simplify EPUB generation and build XML documents structurally
+- Pin the Ruff version used by local development and CI
+
 ## 1.0.0 - 2026-08-19
 
 - Add interactive, numbered, title, and content ID book selection

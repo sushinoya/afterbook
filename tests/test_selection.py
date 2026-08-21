@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from kobokeeps import __version__
 from kobokeeps.errors import KoboKeepsError
 from kobokeeps.models import Book
 from kobokeeps.selection import book_by_number, book_by_title
@@ -33,4 +34,4 @@ def test_cli_version_does_not_require_device(capsys: pytest.CaptureFixture[str])
     with pytest.raises(SystemExit, match="0"):
         run(["--version"])
 
-    assert capsys.readouterr().out.strip() == "kobokeeps 1.0.0"
+    assert capsys.readouterr().out.strip() == f"kobokeeps {__version__}"
