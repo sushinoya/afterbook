@@ -58,10 +58,13 @@ def cached_cover_path(kobo_root: Path, image_id: str) -> Path | None:
         if candidate.is_file():
             return candidate
 
+    prefix = f"{image_id} - "
     candidates = [
         path
-        for path in cache_directory.glob(f"{image_id} - *{KOBO_PARSED_IMAGE_SUFFIX}")
+        for path in cache_directory.iterdir()
         if path.is_file()
+        and path.name.startswith(prefix)
+        and path.name.endswith(KOBO_PARSED_IMAGE_SUFFIX)
     ]
     return max(candidates, key=lambda path: path.stat().st_size) if candidates else None
 

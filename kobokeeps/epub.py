@@ -6,8 +6,10 @@ import re
 import unicodedata
 import uuid
 import zipfile
+from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from kobokeeps.archive import archive_json
 from kobokeeps.epub_utils import (
@@ -49,10 +51,19 @@ def safe_filename(value: str) -> str:
     normalized = unicodedata.normalize("NFC", value)
     cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", normalized)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    cleaned = truncate_filename(cleaned)
     if cleaned.upper() in WINDOWS_RESERVED_NAMES:
         cleaned = f"{cleaned} Book"
-    cleaned = cleaned[:MAX_FILENAME_LENGTH].rstrip(" .")
+    cleaned = truncate_filename(cleaned)
     return cleaned or "My Clippings"
+
+
+def truncate_filename(value: str) -> str:
+    """Truncate a filename stem by bytes without splitting UTF-8 codepoints."""
+    encoded = value.encode("utf-8")
+    if len(encoded) <= MAX_FILENAME_LENGTH:
+        return value.rstrip(" .")
+    return encoded[:MAX_FILENAME_LENGTH].decode("utf-8", errors="ignore").rstrip(" .")
 
 
 def grouped_annotations(
@@ -96,40 +107,56 @@ def write_epub(
     identifier = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, book.content_id + ':kobokeeps')}"
     modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as epub:
-        # EPUB requires mimetype to be the first ZIP entry and stored without compression.
-        epub.writestr("mimetype", EPUB_MIMETYPE, compress_type=zipfile.ZIP_STORED)
-        epub.writestr(CONTAINER_PATH, container_document())
-        epub.writestr(STYLESHEET_PATH, STYLESHEET)
-        epub.writestr(TITLE_PATH, title_document(book, output_title, language))
-        epub.writestr(NAVIGATION_PATH, navigation_document(chapters, language))
-        epub.writestr(NCX_PATH, ncx_document(output_title, identifier, chapters))
-        epub.writestr(ANNOTATION_ARCHIVE_PATH, archive_json(book, annotations))
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            prefix=".kobokeeps-",
+            suffix=".epub.tmp",
+            dir=output_directory,
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
 
-        for (chapter_title, chapter_annotations), (_, filename) in zip(
-            groups, chapters, strict=True
-        ):
+        with zipfile.ZipFile(temporary_path, "w", compression=zipfile.ZIP_DEFLATED) as epub:
+            # EPUB requires mimetype to be the first ZIP entry and stored without compression.
+            epub.writestr("mimetype", EPUB_MIMETYPE, compress_type=zipfile.ZIP_STORED)
+            epub.writestr(CONTAINER_PATH, container_document())
+            epub.writestr(STYLESHEET_PATH, STYLESHEET)
+            epub.writestr(TITLE_PATH, title_document(book, output_title, language))
+            epub.writestr(NAVIGATION_PATH, navigation_document(chapters, language))
+            epub.writestr(NCX_PATH, ncx_document(output_title, identifier, chapters))
+            epub.writestr(ANNOTATION_ARCHIVE_PATH, archive_json(book, annotations))
+
+            for (chapter_title, chapter_annotations), (_, filename) in zip(
+                groups, chapters, strict=True
+            ):
+                epub.writestr(
+                    content_path(filename),
+                    chapter_document(chapter_title, chapter_annotations, language),
+                )
+
+            if cover is not None:
+                epub.writestr(content_path(f"cover.{cover.extension}"), cover.data)
+                epub.writestr(COVER_PAGE_PATH, cover_document(cover))
+
+            # content.opf is written last because it describes every resource above.
             epub.writestr(
-                content_path(filename),
-                chapter_document(chapter_title, chapter_annotations, language),
+                PACKAGE_PATH,
+                package_document(
+                    book,
+                    output_title,
+                    identifier,
+                    language,
+                    chapters,
+                    cover,
+                    modified,
+                ),
             )
 
-        if cover is not None:
-            epub.writestr(content_path(f"cover.{cover.extension}"), cover.data)
-            epub.writestr(COVER_PAGE_PATH, cover_document(cover))
-
-        # content.opf is written last because it describes every resource above.
-        epub.writestr(
-            PACKAGE_PATH,
-            package_document(
-                book,
-                output_title,
-                identifier,
-                language,
-                chapters,
-                cover,
-                modified,
-            ),
-        )
+        temporary_path.replace(output_path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            with suppress(OSError):
+                temporary_path.unlink()
 
     return output_path

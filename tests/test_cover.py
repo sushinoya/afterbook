@@ -57,3 +57,13 @@ def test_uses_largest_unknown_variant_as_fallback(tmp_path: Path) -> None:
     large.write_bytes(png_bytes(1200, 1800) + b"larger cached variant")
 
     assert cached_cover_path(tmp_path, image_id) == large
+
+
+def test_fallback_cover_lookup_treats_image_id_as_literal_text(tmp_path: Path) -> None:
+    image_id = "cover[id]"
+    cache_directory = cover_cache_directory(tmp_path, image_id)
+    cache_directory.mkdir(parents=True)
+    cover_path = cache_directory / cover_cache_filename(image_id, "UNKNOWN")
+    cover_path.write_bytes(png_bytes(1200, 1800))
+
+    assert cached_cover_path(tmp_path, image_id) == cover_path

@@ -40,3 +40,14 @@ def test_reads_jpeg_dimensions() -> None:
 
 def test_rejects_unknown_image_format() -> None:
     assert image_metadata(b"not an image") is None
+
+
+def test_rejects_png_without_ihdr_chunk() -> None:
+    data = (
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\x0dJUNK"
+        + (1264).to_bytes(4, "big")
+        + (1680).to_bytes(4, "big")
+    )
+
+    assert image_metadata(data) is None

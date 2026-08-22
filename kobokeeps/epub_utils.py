@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from typing import cast
 
 from kobokeeps.models import Annotation, Book, CoverImage, highlight_color
 
@@ -48,23 +49,42 @@ svg { display: block; width: 100%; height: 100%; margin: 0; padding: 0; }
 """.strip()
 
 
+def is_xml_character(character: str) -> bool:
+    """Return whether a character is allowed in XML 1.0 text."""
+    codepoint = ord(character)
+    return (
+        codepoint in (0x09, 0x0A, 0x0D)
+        or 0x20 <= codepoint <= 0xD7FF
+        or 0xE000 <= codepoint <= 0xFFFD
+        or 0x10000 <= codepoint <= 0x10FFFF
+    )
+
+
+def xml_text(value: str | None) -> str:
+    """Remove characters that would make generated XHTML or OPF invalid."""
+    if not value:
+        return ""
+    return "".join(character for character in value if is_xml_character(character))
+
+
 def xml_bytes(root: ET.Element) -> bytes:
     """Serialize an XML tree with the declaration EPUB readers expect."""
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)  # type: ignore [no-any-return]
+    return cast(bytes, ET.tostring(root, encoding="utf-8", xml_declaration=True))
 
 
 def xhtml_page(title: str, language: str) -> tuple[ET.Element, ET.Element]:
     """Create the common XHTML shell and return its root and body."""
+    safe_language = xml_text(language) or "en"
     root = ET.Element(
         "html",
         {
             "xmlns": XHTML_NAMESPACE,
-            "xml:lang": language,
-            "lang": language,
+            "xml:lang": safe_language,
+            "lang": safe_language,
         },
     )
     head = ET.SubElement(root, "head")
-    ET.SubElement(head, "title").text = title
+    ET.SubElement(head, "title").text = xml_text(title)
     ET.SubElement(
         head,
         "link",
@@ -76,9 +96,9 @@ def xhtml_page(title: str, language: str) -> tuple[ET.Element, ET.Element]:
 def title_document(book: Book, output_title: str, language: str) -> bytes:
     """Build the minimal title page shown before the clippings."""
     root, body = xhtml_page(output_title, language)
-    ET.SubElement(body, "h1").text = output_title
+    ET.SubElement(body, "h1").text = xml_text(output_title)
     if book.author:
-        ET.SubElement(body, "p").text = book.author
+        ET.SubElement(body, "p").text = xml_text(book.author)
 
     highlight_word = "highlight" if book.highlight_count == 1 else "highlights"
     note_word = "note" if book.note_count == 1 else "notes"
@@ -91,7 +111,7 @@ def title_document(book: Book, output_title: str, language: str) -> bytes:
 def chapter_document(chapter: str, annotations: list[Annotation], language: str) -> bytes:
     """Build one source chapter containing its highlights and notes."""
     root, body = xhtml_page(chapter, language)
-    ET.SubElement(body, "h1").text = chapter
+    ET.SubElement(body, "h1").text = xml_text(chapter)
 
     for annotation in annotations:
         clipping = ET.SubElement(body, "section", {"class": "clipping"})
@@ -106,9 +126,11 @@ def chapter_document(chapter: str, annotations: list[Annotation], language: str)
                     "style": f"background-color: {color.hex_value};",
                 },
             )
-            highlight.text = annotation.text
+            highlight.text = xml_text(annotation.text)
         if annotation.note:
-            ET.SubElement(clipping, "blockquote", {"class": "note"}).text = annotation.note
+            ET.SubElement(clipping, "blockquote", {"class": "note"}).text = xml_text(
+                annotation.note
+            )
 
     return xml_bytes(root)
 
@@ -183,7 +205,7 @@ def navigation_document(chapters: list[tuple[str, str]], language: str) -> bytes
     ET.SubElement(title_item, "a", {"href": "title.xhtml"}).text = "Clippings"
     for title, filename in chapters:
         item = ET.SubElement(ordered_list, "li")
-        ET.SubElement(item, "a", {"href": filename}).text = title
+        ET.SubElement(item, "a", {"href": filename}).text = xml_text(title)
 
     return xml_bytes(root)
 
@@ -198,7 +220,7 @@ def ncx_document(
     head = ET.SubElement(root, "head")
     ET.SubElement(head, "meta", {"name": "dtb:uid", "content": identifier})
     title = ET.SubElement(root, "docTitle")
-    ET.SubElement(title, "text").text = output_title
+    ET.SubElement(title, "text").text = xml_text(output_title)
     navigation = ET.SubElement(root, "navMap")
 
     add_ncx_point(navigation, "title", 1, "Clippings", "title.xhtml")
@@ -228,7 +250,7 @@ def add_ncx_point(
         {"id": point_id, "playOrder": str(play_order)},
     )
     label_element = ET.SubElement(point, "navLabel")
-    ET.SubElement(label_element, "text").text = label
+    ET.SubElement(label_element, "text").text = xml_text(label)
     ET.SubElement(point, "content", {"src": source})
 
 
@@ -253,13 +275,13 @@ def add_manifest_item(
 def add_book_metadata(metadata: ET.Element, book: Book) -> None:
     """Preserve source-book metadata without displaying it in the reading flow."""
     if book.author:
-        ET.SubElement(metadata, "dc:creator").text = book.author
+        ET.SubElement(metadata, "dc:creator").text = xml_text(book.author)
     if book.publisher:
-        ET.SubElement(metadata, "dc:publisher").text = book.publisher
+        ET.SubElement(metadata, "dc:publisher").text = xml_text(book.publisher)
     if book.isbn:
-        ET.SubElement(metadata, "dc:identifier").text = book.isbn
+        ET.SubElement(metadata, "dc:identifier").text = xml_text(book.isbn)
     if book.description:
-        ET.SubElement(metadata, "dc:description").text = book.description
+        ET.SubElement(metadata, "dc:description").text = xml_text(book.description)
     if not book.series:
         return
 
@@ -268,7 +290,7 @@ def add_book_metadata(metadata: ET.Element, book: Book) -> None:
         "meta",
         {"property": "belongs-to-collection", "id": "series"},
     )
-    collection.text = book.series
+    collection.text = xml_text(book.series)
     collection_type = ET.SubElement(
         metadata,
         "meta",
@@ -281,7 +303,7 @@ def add_book_metadata(metadata: ET.Element, book: Book) -> None:
             "meta",
             {"refines": "#series", "property": "group-position"},
         )
-        position.text = str(book.series_number)
+        position.text = xml_text(str(book.series_number))
 
 
 def package_document(
@@ -305,9 +327,9 @@ def package_document(
     )
     metadata = ET.SubElement(package, "metadata", {"xmlns:dc": DC_NAMESPACE})
     ET.SubElement(metadata, "dc:identifier", {"id": "book-id"}).text = identifier
-    ET.SubElement(metadata, "dc:title").text = output_title
-    ET.SubElement(metadata, "dc:language").text = language
-    ET.SubElement(metadata, "dc:source").text = book.title
+    ET.SubElement(metadata, "dc:title").text = xml_text(output_title)
+    ET.SubElement(metadata, "dc:language").text = xml_text(language) or "en"
+    ET.SubElement(metadata, "dc:source").text = xml_text(book.title)
     ET.SubElement(metadata, "meta", {"property": "dcterms:modified"}).text = modified
     add_book_metadata(metadata, book)
 

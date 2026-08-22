@@ -28,6 +28,14 @@ def test_rejects_invalid_book_number() -> None:
         book_by_number(books(), 3)
 
 
+def test_print_books_pluralizes_counts(capsys: pytest.CaptureFixture[str]) -> None:
+    from kobokeeps.cli import print_books
+
+    print_books([Book("one", "One Note", highlight_count=1, note_count=1)])
+
+    assert "[1 highlight, 1 note]" in capsys.readouterr().out
+
+
 def test_cli_version_does_not_require_device(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

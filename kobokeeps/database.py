@@ -36,6 +36,53 @@ ANNOTATION_COLUMNS = {
 }
 
 
+def optional_text(value: object) -> str | None:
+    """Return a string value from SQLite, preserving empty strings."""
+    if value is None:
+        return None
+    return str(value)
+
+
+def optional_int(value: object) -> int | None:
+    """Return an integer from SQLite's dynamically typed values."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if not isinstance(value, str):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def optional_float(value: object) -> float | None:
+    """Return a float from SQLite's dynamically typed values."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def optional_number(value: object) -> float | int | None:
+    """Return an int when possible, otherwise a float, from SQLite values."""
+    integer_value = optional_int(value)
+    if integer_value is not None:
+        return integer_value
+    return optional_float(value)
+
+
 @dataclass(frozen=True, slots=True)
 class ChapterRecord:
     """A chapter row used to resolve annotation positions."""
@@ -125,7 +172,9 @@ class KoboRepository:
                        SUM(CASE WHEN {text_value} <> '' THEN 1 ELSE 0 END) AS highlight_count,
                        SUM(CASE WHEN {note_value} <> '' THEN 1 ELSE 0 END) AS note_count
                 FROM Bookmark b
-                WHERE ({text_value} <> '' OR {note_value} <> ''){visible_condition}
+                WHERE b."VolumeID" IS NOT NULL
+                  AND TRIM(CAST(b."VolumeID" AS TEXT)) <> ''
+                  AND ({text_value} <> '' OR {note_value} <> ''){visible_condition}
                 GROUP BY b."VolumeID"
             )
             SELECT a.content_id, a.highlight_count, a.note_count, {", ".join(book_fields)}
@@ -137,38 +186,44 @@ class KoboRepository:
 
     def book_from_row(self, row: sqlite3.Row) -> Book:
         statistics = ReadingStatistics(
-            read_status=row["read_status"],
-            percent_read=row["percent_read"],
-            date_last_read=row["date_last_read"],
-            time_spent_reading=row["time_spent_reading"],
-            times_started_reading=row["times_started_reading"],
-            last_time_started_reading=row["last_time_started_reading"],
-            last_time_finished_reading=row["last_time_finished_reading"],
-            store_pages=row["store_pages"],
-            store_word_count=row["store_word_count"],
-            rest_of_book_estimate=row["rest_of_book_estimate"],
-            store_time_to_read_lower_estimate=row["store_time_to_read_lower_estimate"],
-            store_time_to_read_upper_estimate=row["store_time_to_read_upper_estimate"],
-            rating=row["rating"],
-            rating_date_modified=row["rating_date_modified"],
+            read_status=optional_int(row["read_status"]),
+            percent_read=optional_float(row["percent_read"]),
+            date_last_read=optional_text(row["date_last_read"]),
+            time_spent_reading=optional_number(row["time_spent_reading"]),
+            times_started_reading=optional_int(row["times_started_reading"]),
+            last_time_started_reading=optional_text(row["last_time_started_reading"]),
+            last_time_finished_reading=optional_text(row["last_time_finished_reading"]),
+            store_pages=optional_int(row["store_pages"]),
+            store_word_count=optional_int(row["store_word_count"]),
+            rest_of_book_estimate=optional_number(row["rest_of_book_estimate"]),
+            store_time_to_read_lower_estimate=optional_number(
+                row["store_time_to_read_lower_estimate"]
+            ),
+            store_time_to_read_upper_estimate=optional_number(
+                row["store_time_to_read_upper_estimate"]
+            ),
+            rating=optional_number(row["rating"]),
+            rating_date_modified=optional_text(row["rating_date_modified"]),
         )
+        title = optional_text(row["title"])
+        content_id = optional_text(row["content_id"]) or ""
         return Book(
-            content_id=str(row["content_id"]),
-            title=row["title"] or "Untitled",
-            author=row["author"],
-            subtitle=row["subtitle"],
-            isbn=row["isbn"],
-            language=row["language"],
-            publisher=row["publisher"],
-            series=row["series"],
+            content_id=content_id,
+            title=title or "Untitled",
+            author=optional_text(row["author"]),
+            subtitle=optional_text(row["subtitle"]),
+            isbn=optional_text(row["isbn"]),
+            language=optional_text(row["language"]),
+            publisher=optional_text(row["publisher"]),
+            series=optional_text(row["series"]),
             series_number=row["series_number"],
-            image_id=row["image_id"],
-            description=row["description"],
-            mime_type=row["mime_type"],
-            external_id=row["external_id"],
-            date_created=row["date_created"],
-            highlight_count=row["highlight_count"] or 0,
-            note_count=row["note_count"] or 0,
+            image_id=optional_text(row["image_id"]),
+            description=optional_text(row["description"]),
+            mime_type=optional_text(row["mime_type"]),
+            external_id=optional_text(row["external_id"]),
+            date_created=optional_text(row["date_created"]),
+            highlight_count=optional_int(row["highlight_count"]) or 0,
+            note_count=optional_int(row["note_count"]) or 0,
             reading_statistics=statistics,
         )
 
@@ -203,66 +258,75 @@ class KoboRepository:
         if "BookID" not in columns or "ContentID" not in columns:
             return []
         title_expression = '"Title"' if "Title" in columns else "NULL"
-        if "SpineIndex" in columns:
-            index_expression = '"SpineIndex"'
+        if "SpineIndex" in columns and "VolumeIndex" in columns:
+            index_expression = 'COALESCE("SpineIndex", "VolumeIndex", 0)'
+        elif "SpineIndex" in columns:
+            index_expression = 'COALESCE("SpineIndex", 0)'
         elif "VolumeIndex" in columns:
-            index_expression = '"VolumeIndex"'
+            index_expression = 'COALESCE("VolumeIndex", 0)'
         else:
             index_expression = "0"
         query = (
             f'SELECT {title_expression} AS title, "ContentID" AS content_id, '
             f'{index_expression} AS spine_index FROM content WHERE "BookID" = ?'
         )
-        return [
-            ChapterRecord(
-                title=row["title"],
-                content_id=str(row["content_id"] or ""),
-                spine_index=row["spine_index"] or 0.0,
+        records: list[ChapterRecord] = []
+        for row in self.connection.execute(query, (book_id,)).fetchall():
+            content_id = normalized_content_id(optional_text(row["content_id"]) or "")
+            if not content_id:
+                continue
+            records.append(
+                ChapterRecord(
+                    title=optional_text(row["title"]),
+                    content_id=content_id,
+                    spine_index=optional_float(row["spine_index"]) or 0.0,
+                )
             )
-            for row in self.connection.execute(query, (book_id,)).fetchall()
-        ]
+        return records
 
     def annotation_from_row(
         self,
         row: sqlite3.Row,
         chapters: list[ChapterRecord],
     ) -> Annotation:
-        content_id = str(row["content_id"] or "")
+        content_id = optional_text(row["content_id"]) or ""
         chapter, spine_index = resolve_chapter(chapters, content_id)
         return Annotation(
-            bookmark_id=row["bookmark_id"],
-            uuid=row["uuid"],
-            text=row["text"] or "",
-            note=row["note"] or "",
-            context_string=row["context_string"],
-            color_code=row["color_code"],
-            date_created=row["date_created"],
-            date_modified=row["date_modified"],
-            version=row["version"],
-            annotation_type=row["annotation_type"],
+            bookmark_id=optional_text(row["bookmark_id"]),
+            uuid=optional_text(row["uuid"]),
+            text=optional_text(row["text"]) or "",
+            note=optional_text(row["note"]) or "",
+            context_string=optional_text(row["context_string"]),
+            color_code=optional_int(row["color_code"]),
+            date_created=optional_text(row["date_created"]),
+            date_modified=optional_text(row["date_modified"]),
+            version=optional_text(row["version"]),
+            annotation_type=optional_text(row["annotation_type"]),
             location=AnnotationLocation(
                 content_id=content_id,
                 chapter=chapter,
                 spine_index=spine_index,
-                chapter_progress=row["chapter_progress"] or 0.0,
-                start_container_path=row["start_container_path"],
-                start_container_child_index=row["start_container_child_index"],
-                start_offset=row["start_offset"],
-                end_container_path=row["end_container_path"],
-                end_container_child_index=row["end_container_child_index"],
-                end_offset=row["end_offset"],
+                chapter_progress=optional_float(row["chapter_progress"]) or 0.0,
+                start_container_path=optional_text(row["start_container_path"]),
+                start_container_child_index=optional_int(row["start_container_child_index"]),
+                start_offset=optional_int(row["start_offset"]),
+                end_container_path=optional_text(row["end_container_path"]),
+                end_container_child_index=optional_int(row["end_container_child_index"]),
+                end_offset=optional_int(row["end_offset"]),
             ),
         )
 
 
 def normalized_content_id(content_id: str) -> str:
     """Normalize an annotation content identifier for chapter matching."""
-    return content_id.replace("\\", "/").split("#kobo.", 1)[0]
+    return content_id.replace("\\", "/").split("#", 1)[0]
 
 
 def resolve_chapter(records: list[ChapterRecord], content_id: str) -> tuple[str, float]:
     """Resolve an annotation content identifier to a chapter."""
     normalized_id = normalized_content_id(content_id)
+    if not normalized_id:
+        return "Unknown chapter", 0.0
     matches = [
         record
         for record in records

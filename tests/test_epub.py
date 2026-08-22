@@ -5,10 +5,12 @@ import zipfile
 from contextlib import closing
 from pathlib import Path
 
+import pytest
+
 from kobokeeps.database import KoboRepository, open_database
 from kobokeeps.epub import safe_filename, write_epub
 from kobokeeps.epub_utils import cover_document
-from kobokeeps.models import KOBO_HIGHLIGHT_PALETTE
+from kobokeeps.models import KOBO_HIGHLIGHT_PALETTE, Annotation, AnnotationLocation, Book
 
 
 def load_book(kobo_database: Path):
@@ -170,3 +172,67 @@ def test_safe_filename_is_portable() -> None:
     assert safe_filename("Bad: <book>?") == "Bad book"
     assert safe_filename("CON") == "CON Book"
     assert len(safe_filename("x" * 300)) == 180
+
+
+def test_safe_filename_limits_utf8_bytes() -> None:
+    filename = safe_filename("\u00e9" * 300)
+
+    assert len(filename.encode("utf-8")) <= 180
+
+
+def test_epub_xml_sanitizes_invalid_control_characters(tmp_path: Path) -> None:
+    book = Book("book-id", "Broken \x01 Title", "Author \x02 Name", language="en")
+    annotation = Annotation(
+        bookmark_id=None,
+        uuid=None,
+        text="highlight \x08 text",
+        note="note \x0c text",
+        context_string=None,
+        color_code=0,
+        date_created=None,
+        date_modified=None,
+        version=None,
+        annotation_type=None,
+        location=AnnotationLocation(
+            content_id="book-id/chapter.xhtml",
+            chapter="Chapter \x01 Name",
+            spine_index=1.0,
+        ),
+    )
+
+    output = write_epub(book, [annotation], tmp_path)
+
+    with zipfile.ZipFile(output) as epub:
+        visible_xml = [
+            epub.read(filename)
+            for filename in epub.namelist()
+            if filename.endswith((".xhtml", ".opf", ".ncx"))
+        ]
+
+    for document in visible_xml:
+        assert b"\x01" not in document
+        assert b"\x02" not in document
+        assert b"\x08" not in document
+        assert b"\x0c" not in document
+        ET.fromstring(document)
+
+
+def test_write_epub_preserves_existing_file_when_generation_fails(
+    kobo_database: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    book, annotations = load_book(kobo_database)
+    output_path = tmp_path / f"{safe_filename(f'{book.title} - My Clippings')}.epub"
+    output_path.write_bytes(b"previous export")
+
+    def fail_package_document(*args: object) -> bytes:
+        raise RuntimeError("package failure")
+
+    monkeypatch.setattr("kobokeeps.epub.package_document", fail_package_document)
+
+    with pytest.raises(RuntimeError, match="package failure"):
+        write_epub(book, annotations, tmp_path)
+
+    assert output_path.read_bytes() == b"previous export"
+    assert list(tmp_path.glob(".kobokeeps-*.epub.tmp")) == []

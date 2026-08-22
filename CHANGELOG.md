@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.2 - 2026-08-22
+
+- Preserve chapter ordering when Kobo stores `VolumeIndex` but leaves `SpineIndex` empty
+- Normalize dynamically typed SQLite values before building annotation models
+- Sanitize invalid XML characters in visible EPUB documents
+- Write EPUB files atomically so failed exports do not replace existing books
+- Fix literal matching for cached cover IDs that contain glob metacharacters
+- Include the complete test suite in source distributions and modernize license metadata
+
 ## 1.0.1 - 2026-08-21
 
 - Fix Ruff import formatting and install test dependencies in the CI matrix

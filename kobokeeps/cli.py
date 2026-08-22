@@ -69,9 +69,11 @@ def print_books(books: list[Book]) -> None:
     """Print annotated books in a stable numbered list."""
     for index, book in enumerate(books, start=1):
         author = f" - {book.author}" if book.author else ""
+        highlight_word = "highlight" if book.highlight_count == 1 else "highlights"
+        note_word = "note" if book.note_count == 1 else "notes"
         print(
             f"{index:>3}. {book.title}{author} "
-            f"[{book.highlight_count} highlights, {book.note_count} notes]"
+            f"[{book.highlight_count} {highlight_word}, {book.note_count} {note_word}]"
         )
         print(f"     {book.content_id}")
 
