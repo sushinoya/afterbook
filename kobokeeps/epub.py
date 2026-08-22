@@ -1,4 +1,4 @@
-"""Create standalone EPUB books from Kobo annotations."""
+"""Create standalone EPUB books from reader annotations."""
 
 from __future__ import annotations
 
@@ -22,7 +22,8 @@ from kobokeeps.epub_utils import (
     package_document,
     title_document,
 )
-from kobokeeps.models import Annotation, Book, CoverImage
+from kobokeeps.models import Annotation
+from kobokeeps.readers.base import ReaderExport
 
 EPUB_MIMETYPE = "application/epub+zip"
 CONTENT_DIRECTORY = "OEBPS"
@@ -32,7 +33,7 @@ STYLESHEET_PATH = f"{CONTENT_DIRECTORY}/styles.css"
 TITLE_PATH = f"{CONTENT_DIRECTORY}/title.xhtml"
 NAVIGATION_PATH = f"{CONTENT_DIRECTORY}/nav.xhtml"
 NCX_PATH = f"{CONTENT_DIRECTORY}/toc.ncx"
-ANNOTATION_ARCHIVE_PATH = f"{CONTENT_DIRECTORY}/archive/kobo-annotations.json"
+ANNOTATION_ARCHIVE_PATH = f"{CONTENT_DIRECTORY}/archive/annotations.json"
 COVER_PAGE_PATH = f"{CONTENT_DIRECTORY}/cover.xhtml"
 
 MAX_FILENAME_LENGTH = 180
@@ -74,7 +75,7 @@ def grouped_annotations(
     previous_key: tuple[float, str] | None = None
 
     for annotation in annotations:
-        key = (annotation.location.spine_index, annotation.location.chapter)
+        key = (annotation.location.chapter_index, annotation.location.chapter)
         if key != previous_key:
             groups.append((annotation.location.chapter, []))
             previous_key = key
@@ -89,12 +90,13 @@ def content_path(filename: str) -> str:
 
 
 def write_epub(
-    book: Book,
-    annotations: list[Annotation],
+    export: ReaderExport,
     output_directory: Path,
-    cover: CoverImage | None = None,
 ) -> Path:
     """Write a standalone clipping EPUB and return its path."""
+    book = export.book
+    annotations = export.annotations
+    cover = export.cover
     output_title = f"{book.title} - My Clippings"
     language = book.language or "en"
     output_directory.mkdir(parents=True, exist_ok=True)
@@ -104,7 +106,7 @@ def write_epub(
     chapters = [
         (title, f"chapter-{index}.xhtml") for index, (title, _) in enumerate(groups, start=1)
     ]
-    identifier = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, book.content_id + ':kobokeeps')}"
+    identifier = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, book.source_id + ':kobokeeps')}"
     modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     temporary_path: Path | None = None
@@ -125,7 +127,7 @@ def write_epub(
             epub.writestr(TITLE_PATH, title_document(book, output_title, language))
             epub.writestr(NAVIGATION_PATH, navigation_document(chapters, language))
             epub.writestr(NCX_PATH, ncx_document(output_title, identifier, chapters))
-            epub.writestr(ANNOTATION_ARCHIVE_PATH, archive_json(book, annotations))
+            epub.writestr(ANNOTATION_ARCHIVE_PATH, archive_json(export))
 
             for (chapter_title, chapter_annotations), (_, filename) in zip(
                 groups, chapters, strict=True

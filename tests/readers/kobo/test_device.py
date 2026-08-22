@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from kobokeeps.database import open_database
-from kobokeeps.device import (
+from kobokeeps.errors import KoboKeepsError
+from kobokeeps.readers.kobo.database import open_database
+from kobokeeps.readers.kobo.device import (
     database_snapshot,
     discover_kobos,
     local_output_directory,
 )
-from kobokeeps.errors import KoboKeepsError
 
 
 def test_database_snapshot_copies_database_and_sidecar(
@@ -42,7 +42,7 @@ def test_discovers_kobo_in_volumes_directory(tmp_path: Path) -> None:
 
 
 def test_linux_mounts_find_user_media_directories(tmp_path: Path) -> None:
-    from kobokeeps.device import linux_mounts
+    from kobokeeps.readers.kobo.device import linux_mounts
 
     home = tmp_path / "home" / "reader"
     media_root = tmp_path / "media"
@@ -58,7 +58,7 @@ def test_linux_mounts_find_user_media_directories(tmp_path: Path) -> None:
 
 
 def test_linux_mounts_include_mnt(tmp_path: Path) -> None:
-    from kobokeeps.device import linux_mounts
+    from kobokeeps.readers.kobo.device import linux_mounts
 
     home = tmp_path / "home" / "reader"
     media_root = tmp_path / "media"
@@ -73,7 +73,7 @@ def test_linux_mounts_include_mnt(tmp_path: Path) -> None:
 
 
 def test_windows_mounts_filter_existing_drive_roots(tmp_path: Path) -> None:
-    from kobokeeps.device import windows_mounts
+    from kobokeeps.readers.kobo.device import windows_mounts
 
     mounted = tmp_path / "E"
     missing = tmp_path / "F"

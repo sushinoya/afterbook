@@ -18,8 +18,8 @@ CONTAINER_NAMESPACE = "urn:oasis:names:tc:opendocument:xmlns:container"
 DCTERMS_PREFIX = "dcterms: http://purl.org/dc/terms/"
 
 # All reading documents share one stylesheet. Highlight colors stay inline on the
-# selected text because Kobo's renderer has historically been more reliable with
-# inline background colors than with semantic mark styling alone.
+# selected text because ebook reader renderers tend to handle inline background
+# colors more consistently than semantic mark styling alone.
 STYLESHEET = """
 body { font-family: serif; line-height: 1.5; margin: 5%; }
 h1 { margin-bottom: 1.5em; }
@@ -39,8 +39,8 @@ h1 { margin-bottom: 1.5em; }
 }
 """.strip()
 
-# The cover page deliberately has no margins. An SVG viewport lets Kobo scale a
-# cached portrait or landscape cover to the screen while preserving its aspect ratio.
+# The cover page deliberately has no margins. An SVG viewport lets readers scale
+# portrait or landscape covers while preserving their aspect ratio.
 COVER_STYLESHEET = """
 @page { margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
@@ -117,7 +117,7 @@ def chapter_document(chapter: str, annotations: list[Annotation], language: str)
         clipping = ET.SubElement(body, "section", {"class": "clipping"})
         if annotation.text:
             paragraph = ET.SubElement(clipping, "p", {"class": "highlight"})
-            color = highlight_color(annotation.color_code)
+            color = highlight_color(annotation.color_name, annotation.color_hex)
             highlight = ET.SubElement(
                 paragraph,
                 "span",
@@ -136,7 +136,7 @@ def chapter_document(chapter: str, annotations: list[Annotation], language: str)
 
 
 def cover_document(cover: CoverImage) -> bytes:
-    """Build a full-page cover that centers and scales the cached Kobo image."""
+    """Build a full-page cover that centers and scales the source cover image."""
     root = ET.Element(
         "html",
         {
@@ -187,7 +187,7 @@ def cover_document(cover: CoverImage) -> bytes:
 
 
 def navigation_document(chapters: list[tuple[str, str]], language: str) -> bytes:
-    """Build the EPUB 3 navigation document used by modern Kobo readers."""
+    """Build the EPUB 3 navigation document."""
     root, body = xhtml_page("Contents", language)
     navigation = ET.SubElement(
         body,
@@ -215,7 +215,7 @@ def ncx_document(
     identifier: str,
     chapters: list[tuple[str, str]],
 ) -> bytes:
-    """Build the legacy NCX table of contents still understood by Kobo."""
+    """Build the legacy NCX table of contents for compatibility."""
     root = ET.Element("ncx", {"xmlns": NCX_NAMESPACE, "version": "2005-1"})
     head = ET.SubElement(root, "head")
     ET.SubElement(head, "meta", {"name": "dtb:uid", "content": identifier})
@@ -347,7 +347,7 @@ def package_document(
     add_manifest_item(
         manifest,
         "archive",
-        "archive/kobo-annotations.json",
+        "archive/annotations.json",
         "application/json",
         fallback="title",
     )

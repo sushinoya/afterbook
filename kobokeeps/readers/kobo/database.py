@@ -11,8 +11,16 @@ from kobokeeps.models import (
     Annotation,
     AnnotationLocation,
     Book,
-    ReadingStatistics,
+    HighlightColor,
+    JsonValue,
 )
+
+KOBO_HIGHLIGHT_PALETTE = {
+    0: HighlightColor("yellow", "#F8E98A"),
+    1: HighlightColor("pink", "#ECA6C4"),
+    2: HighlightColor("blue", "#9DD9E2"),
+    3: HighlightColor("green", "#C4DC88"),
+}
 
 ANNOTATION_COLUMNS = {
     "bookmark_id": "BookmarkID",
@@ -81,6 +89,25 @@ def optional_number(value: object) -> float | int | None:
     if integer_value is not None:
         return integer_value
     return optional_float(value)
+
+
+def raw_json_value(value: object) -> JsonValue:
+    """Convert SQLite values to JSON-compatible archive values."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, bytes):
+        return value.hex()
+    return str(value)
+
+
+def raw_json_row(row: sqlite3.Row) -> dict[str, JsonValue]:
+    """Convert a SQLite row to a JSON-compatible raw archive mapping."""
+    return {key: raw_json_value(row[key]) for key in list(row.keys())}
+
+
+def kobo_sort_hint(child_index: int | None, offset: int | None) -> int:
+    """Build a sortable hint from Kobo's nested DOM position fields."""
+    return (child_index or 0) * 1_000_000 + (offset or 0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,30 +212,10 @@ class KoboRepository:
         return [self.book_from_row(row) for row in self.connection.execute(query).fetchall()]
 
     def book_from_row(self, row: sqlite3.Row) -> Book:
-        statistics = ReadingStatistics(
-            read_status=optional_int(row["read_status"]),
-            percent_read=optional_float(row["percent_read"]),
-            date_last_read=optional_text(row["date_last_read"]),
-            time_spent_reading=optional_number(row["time_spent_reading"]),
-            times_started_reading=optional_int(row["times_started_reading"]),
-            last_time_started_reading=optional_text(row["last_time_started_reading"]),
-            last_time_finished_reading=optional_text(row["last_time_finished_reading"]),
-            store_pages=optional_int(row["store_pages"]),
-            store_word_count=optional_int(row["store_word_count"]),
-            rest_of_book_estimate=optional_number(row["rest_of_book_estimate"]),
-            store_time_to_read_lower_estimate=optional_number(
-                row["store_time_to_read_lower_estimate"]
-            ),
-            store_time_to_read_upper_estimate=optional_number(
-                row["store_time_to_read_upper_estimate"]
-            ),
-            rating=optional_number(row["rating"]),
-            rating_date_modified=optional_text(row["rating_date_modified"]),
-        )
         title = optional_text(row["title"])
         content_id = optional_text(row["content_id"]) or ""
         return Book(
-            content_id=content_id,
+            source_id=content_id,
             title=title or "Untitled",
             author=optional_text(row["author"]),
             subtitle=optional_text(row["subtitle"]),
@@ -217,14 +224,9 @@ class KoboRepository:
             publisher=optional_text(row["publisher"]),
             series=optional_text(row["series"]),
             series_number=row["series_number"],
-            image_id=optional_text(row["image_id"]),
             description=optional_text(row["description"]),
-            mime_type=optional_text(row["mime_type"]),
-            external_id=optional_text(row["external_id"]),
-            date_created=optional_text(row["date_created"]),
             highlight_count=optional_int(row["highlight_count"]) or 0,
             note_count=optional_int(row["note_count"]) or 0,
-            reading_statistics=statistics,
         )
 
     def annotations_for(self, book: Book) -> list[Annotation]:
@@ -246,12 +248,57 @@ class KoboRepository:
                 "LOWER(COALESCE(CAST(b.\"Hidden\" AS TEXT), 'false')) NOT IN ('true', '1')"
             )
         query = f"SELECT {', '.join(fields)} FROM Bookmark b WHERE {' AND '.join(conditions)}"
-        chapters = self.chapter_records(book.content_id)
+        chapters = self.chapter_records(book.source_id)
         annotations = [
             self.annotation_from_row(row, chapters)
-            for row in self.connection.execute(query, (book.content_id,)).fetchall()
+            for row in self.connection.execute(query, (book.source_id,)).fetchall()
         ]
         return sorted(annotations, key=lambda annotation: annotation.sort_key)
+
+    def raw_book_for(self, book: Book) -> dict[str, JsonValue]:
+        """Return the raw Kobo content row for a book."""
+        content_columns = table_columns(self.connection, "content")
+        if "ContentID" not in content_columns:
+            return {"ContentID": book.source_id}
+        row = self.connection.execute(
+            'SELECT * FROM content WHERE "ContentID" = ? LIMIT 1',
+            (book.source_id,),
+        ).fetchone()
+        if row is None:
+            return {"ContentID": book.source_id}
+        return raw_json_row(row)
+
+    def raw_annotations_for(self, book: Book) -> list[dict[str, JsonValue]]:
+        """Return the raw Kobo Bookmark rows exported for a book."""
+        bookmark_columns = table_columns(self.connection, "Bookmark")
+        if "VolumeID" not in bookmark_columns:
+            return []
+        text_value = "TRIM(COALESCE(b.\"Text\", ''))" if "Text" in bookmark_columns else "''"
+        note_value = (
+            "TRIM(COALESCE(b.\"Annotation\", ''))" if "Annotation" in bookmark_columns else "''"
+        )
+        conditions = [
+            'b."VolumeID" = ?',
+            f"({text_value} <> '' OR {note_value} <> '')",
+        ]
+        if "Hidden" in bookmark_columns:
+            conditions.append(
+                "LOWER(COALESCE(CAST(b.\"Hidden\" AS TEXT), 'false')) NOT IN ('true', '1')"
+            )
+        query = f"SELECT b.* FROM Bookmark b WHERE {' AND '.join(conditions)}"
+        rows = self.connection.execute(query, (book.source_id,)).fetchall()
+        return [raw_json_row(row) for row in rows]
+
+    def raw_chapters_for(self, book: Book) -> list[dict[str, JsonValue]]:
+        """Return raw Kobo content rows used for chapter normalization."""
+        content_columns = table_columns(self.connection, "content")
+        if "BookID" not in content_columns:
+            return []
+        rows = self.connection.execute(
+            'SELECT * FROM content WHERE "BookID" = ?',
+            (book.source_id,),
+        ).fetchall()
+        return [raw_json_row(row) for row in rows]
 
     def chapter_records(self, book_id: str) -> list[ChapterRecord]:
         columns = table_columns(self.connection, "content")
@@ -291,29 +338,29 @@ class KoboRepository:
     ) -> Annotation:
         content_id = optional_text(row["content_id"]) or ""
         chapter, spine_index = resolve_chapter(chapters, content_id)
+        color_code = optional_int(row["color_code"])
+        color = KOBO_HIGHLIGHT_PALETTE.get(color_code) if color_code is not None else None
+        bookmark_id = optional_text(row["bookmark_id"])
+        uuid = optional_text(row["uuid"])
+        start_child_index = optional_int(row["start_container_child_index"])
+        start_offset = optional_int(row["start_offset"])
         return Annotation(
-            bookmark_id=optional_text(row["bookmark_id"]),
-            uuid=optional_text(row["uuid"]),
+            source_id=bookmark_id or uuid,
             text=optional_text(row["text"]) or "",
             note=optional_text(row["note"]) or "",
-            context_string=optional_text(row["context_string"]),
-            color_code=optional_int(row["color_code"]),
-            date_created=optional_text(row["date_created"]),
-            date_modified=optional_text(row["date_modified"]),
-            version=optional_text(row["version"]),
-            annotation_type=optional_text(row["annotation_type"]),
             location=AnnotationLocation(
-                content_id=content_id,
                 chapter=chapter,
-                spine_index=spine_index,
-                chapter_progress=optional_float(row["chapter_progress"]) or 0.0,
-                start_container_path=optional_text(row["start_container_path"]),
-                start_container_child_index=optional_int(row["start_container_child_index"]),
-                start_offset=optional_int(row["start_offset"]),
-                end_container_path=optional_text(row["end_container_path"]),
-                end_container_child_index=optional_int(row["end_container_child_index"]),
-                end_offset=optional_int(row["end_offset"]),
+                chapter_index=spine_index,
+                progress=optional_float(row["chapter_progress"]) or 0.0,
+                locator=content_id or None,
+                locator_type="kobo-content-id" if content_id else None,
+                sort_hint=kobo_sort_hint(start_child_index, start_offset),
             ),
+            color_name=color.name if color else None,
+            color_hex=color.hex_value if color else None,
+            kind=optional_text(row["annotation_type"]),
+            created_at=optional_text(row["date_created"]),
+            modified_at=optional_text(row["date_modified"]),
         )
 
 

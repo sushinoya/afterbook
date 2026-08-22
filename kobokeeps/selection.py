@@ -35,9 +35,9 @@ def book_by_title(books: list[Book], title: str) -> Book:
 
 
 def book_by_id(books: list[Book], content_id: str) -> Book:
-    """Select a book by its Kobo content identifier."""
+    """Select a book by its reader content identifier."""
     for book in books:
-        if book.content_id == content_id:
+        if book.source_id == content_id:
             return book
     raise KoboKeepsError(f'No annotated book with id "{content_id}" was found')
 

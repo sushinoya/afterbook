@@ -1,32 +1,49 @@
 from __future__ import annotations
 
 import json
-from contextlib import closing
-from pathlib import Path
 
 from kobokeeps.archive import archive_json
-from kobokeeps.database import KoboRepository, open_database
+from kobokeeps.models import Annotation, AnnotationLocation, Book
+from kobokeeps.readers.base import ReaderExport
 
 
-def test_archive_preserves_context_and_locations(kobo_database: Path) -> None:
-    with closing(open_database(kobo_database)) as connection:
-        repository = KoboRepository(connection)
-        book = repository.list_books()[0]
-        annotations = repository.annotations_for(book)
+def test_archive_preserves_normalized_and_raw_reader_data() -> None:
+    book = Book("reader-book-id", "Book", author="Author", language="en")
+    annotation = Annotation(
+        source_id="reader-annotation-id",
+        text="Highlighted text",
+        note="My note",
+        location=AnnotationLocation(
+            chapter="Chapter",
+            chapter_index=2,
+            progress=0.5,
+            locator="reader-location",
+            locator_type="reader-locator",
+        ),
+        color_name="reader-color",
+        color_hex="#AABBCC",
+        kind="highlight",
+        created_at="2024-01-25T22:00:00",
+    )
+    export = ReaderExport(
+        reader_id="reader",
+        reader_name="Reader",
+        book=book,
+        annotations=[annotation],
+        raw_book={"raw_book_id": "reader-book-id", "reader_field": 7},
+        raw_annotations=[{"raw_annotation_id": "reader-annotation-id"}],
+        raw_context={"chapters": [{"raw_chapter_id": "chapter-id"}]},
+    )
 
-    archive = json.loads(archive_json(book, annotations))
+    archive = json.loads(archive_json(export))
+    normalized_book = archive["normalized"]["book"]
+    normalized_annotations = archive["normalized"]["annotations"]
 
-    assert archive["schema_version"] == 1
-    assert archive["book"]["isbn"] == "9781501160370"
-    assert archive["book"]["description"] == "Description"
-    assert archive["book"]["mime_type"] == "application/x-kobo-epub+zip"
-    assert archive["book"]["external_id"] == "external-1"
-    statistics = archive["book"]["reading_statistics"]
-    assert statistics["rest_of_book_estimate"] == 3600
-    assert statistics["store_time_to_read_lower_estimate"] == 18000
-    assert statistics["store_time_to_read_upper_estimate"] == 22000
-    assert statistics["rating"] == 5
-    assert archive["annotations"][2]["context_string"] == "Surrounding context for chapter two."
-    assert archive["annotations"][2]["version"] == "1"
-    assert archive["annotations"][2]["annotation_type"] == "Highlight"
-    assert archive["annotations"][2]["location"]["start_offset"] == 4
+    assert archive["schema_version"] == 2
+    assert archive["reader"] == {"id": "reader", "name": "Reader"}
+    assert normalized_book["source_id"] == "reader-book-id"
+    assert normalized_annotations[0]["location"]["locator_type"] == "reader-locator"
+    assert normalized_annotations[0]["color_hex"] == "#AABBCC"
+    assert archive["raw"]["book"]["reader_field"] == 7
+    assert archive["raw"]["annotations"] == [{"raw_annotation_id": "reader-annotation-id"}]
+    assert archive["raw"]["context"] == {"chapters": [{"raw_chapter_id": "chapter-id"}]}

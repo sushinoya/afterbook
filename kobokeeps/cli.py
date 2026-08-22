@@ -7,16 +7,10 @@ import sys
 from pathlib import Path
 
 from kobokeeps import __version__
-from kobokeeps.cover import load_cover
-from kobokeeps.database import KoboRepository, open_database
-from kobokeeps.device import (
-    database_snapshot,
-    local_output_directory,
-    select_device,
-)
 from kobokeeps.epub import write_epub
 from kobokeeps.errors import KoboKeepsError
 from kobokeeps.models import Book
+from kobokeeps.readers import default_reader_id, open_reader, supported_reader_ids
 from kobokeeps.selection import (
     book_by_id,
     book_by_number,
@@ -29,10 +23,20 @@ def parser() -> argparse.ArgumentParser:
     """Build the command line parser."""
     argument_parser = argparse.ArgumentParser(
         prog="kobokeeps",
-        description="Turn Kobo highlights and notes into personal books you can keep.",
+        description="Turn ebook reader highlights and notes into personal books you can keep.",
     )
     argument_parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    argument_parser.add_argument("--device", type=Path, help="Path to a mounted Kobo eReader")
+    argument_parser.add_argument(
+        "--reader",
+        choices=supported_reader_ids(),
+        default=default_reader_id(),
+        help="ebook reader backend",
+    )
+    argument_parser.add_argument(
+        "--source",
+        type=Path,
+        help="Path to reader data source",
+    )
     subparsers = argument_parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("list", help="List books with highlights or notes")
@@ -40,7 +44,7 @@ def parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export", help="Create a clipping EPUB")
     export_parser.add_argument("number", nargs="?", type=int, help="Book number from the list")
     export_parser.add_argument("--book", help="Exact book title")
-    export_parser.add_argument("--book-id", help="Kobo content identifier")
+    export_parser.add_argument("--book-id", help="Reader content identifier")
     export_parser.add_argument(
         "--output", type=Path, default=Path.home() / "Documents" / "KoboKeeps"
     )
@@ -75,34 +79,27 @@ def print_books(books: list[Book]) -> None:
             f"{index:>3}. {book.title}{author} "
             f"[{book.highlight_count} {highlight_word}, {book.note_count} {note_word}]"
         )
-        print(f"     {book.content_id}")
+        print(f"     {book.source_id}")
 
 
 def run(arguments: list[str] | None = None) -> int:
     """Run the KoboKeeps CLI."""
     parsed = parser().parse_args(arguments)
-    device = select_device(parsed.device)
 
-    with database_snapshot(device.database_path) as snapshot_path:
-        connection = open_database(snapshot_path)
-        try:
-            repository = KoboRepository(connection)
-            books = repository.list_books()
-            if not books:
-                raise KoboKeepsError("No books with highlights or notes were found")
+    with open_reader(parsed.reader, parsed.source) as reader:
+        books = reader.list_books()
+        if not books:
+            raise KoboKeepsError("No books with highlights or notes were found")
 
-            if parsed.command == "list":
-                print_books(books)
-                return 0
+        if parsed.command == "list":
+            print_books(books)
+            return 0
 
-            book = choose_book(parsed, books)
-            annotations = repository.annotations_for(book)
-        finally:
-            connection.close()
+        book = choose_book(parsed, books)
+        export = reader.export_for(book)
+        output_directory = reader.resolve_output_directory(parsed.output)
 
-    cover = load_cover(device.root, book.image_id)
-    output_directory = local_output_directory(parsed.output, device.root)
-    output_path = write_epub(book, annotations, output_directory, cover)
+    output_path = write_epub(export, output_directory)
     print(output_path)
     return 0
 

@@ -20,7 +20,7 @@ def test_selects_book_by_number() -> None:
 
 
 def test_selects_book_by_exact_title() -> None:
-    assert book_by_title(books(), "why fish don't exist").content_id == "one"
+    assert book_by_title(books(), "why fish don't exist").source_id == "one"
 
 
 def test_rejects_invalid_book_number() -> None:
@@ -36,7 +36,7 @@ def test_print_books_pluralizes_counts(capsys: pytest.CaptureFixture[str]) -> No
     assert "[1 highlight, 1 note]" in capsys.readouterr().out
 
 
-def test_cli_version_does_not_require_device(
+def test_cli_version_does_not_require_reader_source(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     from kobokeeps.cli import run

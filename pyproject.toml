@@ -46,7 +46,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["kobokeeps"]
+packages = ["kobokeeps", "kobokeeps.readers", "kobokeeps.readers.kobo"]
 
 [tool.setuptools.dynamic]
 version = { attr = "kobokeeps.__version__" }
