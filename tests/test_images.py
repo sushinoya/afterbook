@@ -51,3 +51,14 @@ def test_rejects_png_without_ihdr_chunk() -> None:
     )
 
     assert image_metadata(data) is None
+
+
+def test_rejects_png_with_wrong_ihdr_length() -> None:
+    data = (
+        b"\x89PNG\r\n\x1a\n"
+        + b"\x00\x00\x00\x01IHDR"
+        + (1264).to_bytes(4, "big")
+        + (1680).to_bytes(4, "big")
+    )
+
+    assert image_metadata(data) is None

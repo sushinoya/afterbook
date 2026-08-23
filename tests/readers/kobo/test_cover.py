@@ -67,3 +67,16 @@ def test_fallback_cover_lookup_treats_image_id_as_literal_text(tmp_path: Path) -
     cover_path.write_bytes(png_bytes(1200, 1800))
 
     assert cached_cover_path(tmp_path, image_id) == cover_path
+
+
+def test_cover_lookup_rejects_path_separator_image_id(tmp_path: Path) -> None:
+    assert cached_cover_path(tmp_path, "../cover-id") is None
+    assert cached_cover_path(tmp_path, r"..\cover-id") is None
+
+
+def test_load_cover_does_not_follow_absolute_image_id(tmp_path: Path) -> None:
+    image_id = str(tmp_path / "outside-cover")
+    outside_cover = Path(f"{image_id} - {COVER_VARIANT_PRIORITY[0]}.parsed")
+    outside_cover.write_bytes(png_bytes(1200, 1800))
+
+    assert load_cover(tmp_path / "KOBOeReader", image_id) is None

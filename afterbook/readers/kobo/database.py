@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
 
 from afterbook.errors import AfterBookError
@@ -82,13 +83,15 @@ def optional_float(value: object) -> float | None:
     if value is None or value == "":
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        result = float(value)
+        return result if isfinite(result) else None
     if not isinstance(value, str):
         return None
     try:
-        return float(value)
+        result = float(value)
     except ValueError:
         return None
+    return result if isfinite(result) else None
 
 
 def optional_number(value: object) -> float | int | None:
@@ -99,9 +102,20 @@ def optional_number(value: object) -> float | int | None:
     return optional_float(value)
 
 
+def optional_series_number(value: object) -> str | float | int | None:
+    """Return a series position without allowing unsupported SQLite values."""
+    number = optional_number(value)
+    if number is not None:
+        return number
+    text = optional_text(value)
+    return text or None
+
+
 def raw_json_value(value: object) -> JsonValue:
     """Convert SQLite values to JSON-compatible archive values."""
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if isinstance(value, float):
+        return value if isfinite(value) else str(value)
+    if value is None or isinstance(value, (str, int, bool)):
         return value
     if isinstance(value, bytes):
         return value.hex()
@@ -125,6 +139,35 @@ class ChapterRecord:
     title: str | None
     content_id: str
     spine_index: float
+
+
+def bookmark_value(row: sqlite3.Row, bookmark_columns: set[str], column: str) -> object | None:
+    """Return a Bookmark row value only when the source schema contains it."""
+    return row[column] if column in bookmark_columns else None
+
+
+def raw_annotation_sort_key(
+    row: sqlite3.Row,
+    bookmark_columns: set[str],
+    chapters: list[ChapterRecord],
+) -> tuple[float, float, int, str, str]:
+    """Return the normalized export-order key for a raw Bookmark row."""
+    content_id = optional_text(bookmark_value(row, bookmark_columns, "ContentID")) or ""
+    _, spine_index = resolve_chapter(chapters, content_id)
+    start_child_index = optional_int(
+        bookmark_value(row, bookmark_columns, "StartContainerChildIndex")
+    )
+    start_offset = optional_int(bookmark_value(row, bookmark_columns, "StartOffset"))
+    source_id = optional_text(bookmark_value(row, bookmark_columns, "BookmarkID")) or optional_text(
+        bookmark_value(row, bookmark_columns, "UUID")
+    )
+    return (
+        spine_index,
+        optional_float(bookmark_value(row, bookmark_columns, "ChapterProgress")) or 0.0,
+        kobo_sort_hint(start_child_index, start_offset),
+        optional_text(bookmark_value(row, bookmark_columns, "DateCreated")) or "",
+        source_id or "",
+    )
 
 
 BOOK_COLUMNS = {
@@ -172,6 +215,67 @@ def table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in rows}
 
 
+def bookmark_text_expression(bookmark_columns: set[str], column: str) -> str:
+    """Return a SQL expression for a trimmed text-like Bookmark column."""
+    if column not in bookmark_columns:
+        return "''"
+    return f"TRIM(COALESCE(b.\"{column}\", ''))"
+
+
+def nonempty_annotation_condition(bookmark_columns: set[str]) -> str:
+    """Return the shared SQL predicate for exportable bookmark content."""
+    text_value = bookmark_text_expression(bookmark_columns, "Text")
+    note_value = bookmark_text_expression(bookmark_columns, "Annotation")
+    return f"({text_value} <> '' OR {note_value} <> '')"
+
+
+def visible_bookmark_condition(bookmark_columns: set[str]) -> str | None:
+    """Return the shared SQL predicate for non-hidden bookmarks."""
+    if "Hidden" not in bookmark_columns:
+        return None
+    return "LOWER(TRIM(COALESCE(CAST(b.\"Hidden\" AS TEXT), 'false'))) NOT IN ('true', '1')"
+
+
+BOOKMARK_ORDER_COLUMNS = (
+    "ContentID",
+    "ChapterProgress",
+    "StartContainerChildIndex",
+    "StartOffset",
+    "DateCreated",
+    "BookmarkID",
+    "UUID",
+)
+
+
+def bookmark_order_clause(bookmark_columns: set[str]) -> str:
+    """Return a deterministic ORDER BY clause for Bookmark rows."""
+    order_terms = [
+        f'b."{column}"' for column in BOOKMARK_ORDER_COLUMNS if column in bookmark_columns
+    ]
+    return f" ORDER BY {', '.join(order_terms)}" if order_terms else ""
+
+
+def chapter_index_expression(columns: set[str]) -> str:
+    """Return the Kobo content-table expression that best approximates spine order."""
+    if "SpineIndex" in columns and "VolumeIndex" in columns:
+        return 'COALESCE("SpineIndex", "VolumeIndex", 0)'
+    if "SpineIndex" in columns:
+        return 'COALESCE("SpineIndex", 0)'
+    if "VolumeIndex" in columns:
+        return 'COALESCE("VolumeIndex", 0)'
+    return "0"
+
+
+def chapter_order_clause(columns: set[str]) -> str:
+    """Return a deterministic ORDER BY clause for chapter content rows."""
+    order_terms: list[str] = []
+    if "SpineIndex" in columns or "VolumeIndex" in columns:
+        order_terms.append(chapter_index_expression(columns))
+    if "ContentID" in columns:
+        order_terms.append('"ContentID"')
+    return f" ORDER BY {', '.join(order_terms)}" if order_terms else ""
+
+
 @dataclass(slots=True)
 class KoboRepository:
     """Queries Kobo annotation data from a local database snapshot."""
@@ -186,15 +290,16 @@ class KoboRepository:
         if "ContentID" not in content_columns:
             raise AfterBookError("Unsupported Kobo database: content.ContentID is missing")
 
-        text_value = "TRIM(COALESCE(b.\"Text\", ''))" if "Text" in bookmark_columns else "''"
-        note_value = (
-            "TRIM(COALESCE(b.\"Annotation\", ''))" if "Annotation" in bookmark_columns else "''"
-        )
-        visible_condition = ""
-        if "Hidden" in bookmark_columns:
-            visible_condition = (
-                " AND LOWER(COALESCE(CAST(b.\"Hidden\" AS TEXT), 'false')) NOT IN ('true', '1')"
-            )
+        text_value = bookmark_text_expression(bookmark_columns, "Text")
+        note_value = bookmark_text_expression(bookmark_columns, "Annotation")
+        conditions = [
+            'b."VolumeID" IS NOT NULL',
+            "TRIM(CAST(b.\"VolumeID\" AS TEXT)) <> ''",
+            nonempty_annotation_condition(bookmark_columns),
+        ]
+        visible_condition = visible_bookmark_condition(bookmark_columns)
+        if visible_condition is not None:
+            conditions.append(visible_condition)
 
         book_fields = [
             (f'c."{column}" AS "{alias}"' if column in content_columns else f'NULL AS "{alias}"')
@@ -207,9 +312,7 @@ class KoboRepository:
                        SUM(CASE WHEN {text_value} <> '' THEN 1 ELSE 0 END) AS highlight_count,
                        SUM(CASE WHEN {note_value} <> '' THEN 1 ELSE 0 END) AS note_count
                 FROM Bookmark b
-                WHERE b."VolumeID" IS NOT NULL
-                  AND TRIM(CAST(b."VolumeID" AS TEXT)) <> ''
-                  AND ({text_value} <> '' OR {note_value} <> ''){visible_condition}
+                WHERE {" AND ".join(conditions)}
                 GROUP BY b."VolumeID"
             )
             SELECT a.content_id, a.highlight_count, a.note_count, {", ".join(book_fields)}
@@ -231,7 +334,7 @@ class KoboRepository:
             language=optional_text(row["language"]),
             publisher=optional_text(row["publisher"]),
             series=optional_text(row["series"]),
-            series_number=row["series_number"],
+            series_number=optional_series_number(row["series_number"]),
             description=optional_text(row["description"]),
             highlight_count=optional_int(row["highlight_count"]) or 0,
             note_count=optional_int(row["note_count"]) or 0,
@@ -243,19 +346,17 @@ class KoboRepository:
             (f'b."{column}" AS "{alias}"' if column in bookmark_columns else f'NULL AS "{alias}"')
             for alias, column in ANNOTATION_COLUMNS.items()
         ]
-        text_value = "TRIM(COALESCE(b.\"Text\", ''))" if "Text" in bookmark_columns else "''"
-        note_value = (
-            "TRIM(COALESCE(b.\"Annotation\", ''))" if "Annotation" in bookmark_columns else "''"
-        )
         conditions = [
             'b."VolumeID" = ?',
-            f"({text_value} <> '' OR {note_value} <> '')",
+            nonempty_annotation_condition(bookmark_columns),
         ]
-        if "Hidden" in bookmark_columns:
-            conditions.append(
-                "LOWER(COALESCE(CAST(b.\"Hidden\" AS TEXT), 'false')) NOT IN ('true', '1')"
-            )
-        query = f"SELECT {', '.join(fields)} FROM Bookmark b WHERE {' AND '.join(conditions)}"
+        visible_condition = visible_bookmark_condition(bookmark_columns)
+        if visible_condition is not None:
+            conditions.append(visible_condition)
+        query = (
+            f"SELECT {', '.join(fields)} FROM Bookmark b WHERE {' AND '.join(conditions)}"
+            f"{bookmark_order_clause(bookmark_columns)}"
+        )
         chapters = self.chapter_records(book.source_id)
         annotations = [
             self.annotation_from_row(row, chapters)
@@ -281,20 +382,23 @@ class KoboRepository:
         bookmark_columns = table_columns(self.connection, "Bookmark")
         if "VolumeID" not in bookmark_columns:
             return []
-        text_value = "TRIM(COALESCE(b.\"Text\", ''))" if "Text" in bookmark_columns else "''"
-        note_value = (
-            "TRIM(COALESCE(b.\"Annotation\", ''))" if "Annotation" in bookmark_columns else "''"
-        )
         conditions = [
             'b."VolumeID" = ?',
-            f"({text_value} <> '' OR {note_value} <> '')",
+            nonempty_annotation_condition(bookmark_columns),
         ]
-        if "Hidden" in bookmark_columns:
-            conditions.append(
-                "LOWER(COALESCE(CAST(b.\"Hidden\" AS TEXT), 'false')) NOT IN ('true', '1')"
-            )
-        query = f"SELECT b.* FROM Bookmark b WHERE {' AND '.join(conditions)}"
+        visible_condition = visible_bookmark_condition(bookmark_columns)
+        if visible_condition is not None:
+            conditions.append(visible_condition)
+        query = (
+            f"SELECT b.* FROM Bookmark b WHERE {' AND '.join(conditions)}"
+            f"{bookmark_order_clause(bookmark_columns)}"
+        )
         rows = self.connection.execute(query, (book.source_id,)).fetchall()
+        chapters = self.chapter_records(book.source_id)
+        rows = sorted(
+            rows,
+            key=lambda row: raw_annotation_sort_key(row, bookmark_columns, chapters),
+        )
         return [raw_json_row(row) for row in rows]
 
     def raw_chapters_for(self, book: Book) -> list[dict[str, JsonValue]]:
@@ -302,10 +406,8 @@ class KoboRepository:
         content_columns = table_columns(self.connection, "content")
         if "BookID" not in content_columns:
             return []
-        rows = self.connection.execute(
-            'SELECT * FROM content WHERE "BookID" = ?',
-            (book.source_id,),
-        ).fetchall()
+        query = f'SELECT * FROM content WHERE "BookID" = ?{chapter_order_clause(content_columns)}'
+        rows = self.connection.execute(query, (book.source_id,)).fetchall()
         return [raw_json_row(row) for row in rows]
 
     def chapter_records(self, book_id: str) -> list[ChapterRecord]:
@@ -313,17 +415,11 @@ class KoboRepository:
         if "BookID" not in columns or "ContentID" not in columns:
             return []
         title_expression = '"Title"' if "Title" in columns else "NULL"
-        if "SpineIndex" in columns and "VolumeIndex" in columns:
-            index_expression = 'COALESCE("SpineIndex", "VolumeIndex", 0)'
-        elif "SpineIndex" in columns:
-            index_expression = 'COALESCE("SpineIndex", 0)'
-        elif "VolumeIndex" in columns:
-            index_expression = 'COALESCE("VolumeIndex", 0)'
-        else:
-            index_expression = "0"
+        index_expression = chapter_index_expression(columns)
         query = (
             f'SELECT {title_expression} AS title, "ContentID" AS content_id, '
             f'{index_expression} AS spine_index FROM content WHERE "BookID" = ?'
+            f"{chapter_order_clause(columns)}"
         )
         records: list[ChapterRecord] = []
         for row in self.connection.execute(query, (book_id,)).fetchall():
@@ -377,17 +473,31 @@ def normalized_content_id(content_id: str) -> str:
     return content_id.replace("\\", "/").split("#", 1)[0]
 
 
+CONTENT_ID_BOUNDARIES = frozenset({"/", "!", "?", "."})
+
+
+def has_content_id_prefix(value: str, prefix: str) -> bool:
+    """Return whether a content ID starts with a prefix at a path-like boundary."""
+    if not value.startswith(prefix):
+        return False
+    if len(value) == len(prefix):
+        return True
+    return value[len(prefix)] in CONTENT_ID_BOUNDARIES
+
+
+def content_ids_match(annotation_id: str, chapter_id: str) -> bool:
+    """Return whether an annotation content ID belongs to a chapter content ID."""
+    return has_content_id_prefix(annotation_id, chapter_id) or has_content_id_prefix(
+        chapter_id, annotation_id
+    )
+
+
 def resolve_chapter(records: list[ChapterRecord], content_id: str) -> tuple[str, float]:
     """Resolve an annotation content identifier to a chapter."""
     normalized_id = normalized_content_id(content_id)
     if not normalized_id:
         return "Unknown chapter", 0.0
-    matches = [
-        record
-        for record in records
-        if normalized_id.startswith(record.content_id)
-        or record.content_id.startswith(normalized_id)
-    ]
+    matches = [record for record in records if content_ids_match(normalized_id, record.content_id)]
     if not matches:
         return "Unknown chapter", 0.0
     best_match = max(matches, key=lambda record: len(record.content_id))

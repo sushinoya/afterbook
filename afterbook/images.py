@@ -10,6 +10,7 @@ GIF_MEDIA_TYPE = "image/gif"
 
 JPEG_SIGNATURE = b"\xff\xd8"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_IHDR_CHUNK_LENGTH = 13
 PNG_IHDR_CHUNK_TYPE = b"IHDR"
 GIF_SIGNATURES = (b"GIF87a", b"GIF89a")
 
@@ -35,7 +36,12 @@ JPEG_START_OF_FRAME_MARKERS = {
 
 def png_dimensions(data: bytes) -> tuple[int, int] | None:
     """Read width and height from a PNG IHDR header."""
-    if len(data) < 24 or not data.startswith(PNG_SIGNATURE) or data[12:16] != PNG_IHDR_CHUNK_TYPE:
+    if (
+        len(data) < 24
+        or not data.startswith(PNG_SIGNATURE)
+        or int.from_bytes(data[8:12], "big") != PNG_IHDR_CHUNK_LENGTH
+        or data[12:16] != PNG_IHDR_CHUNK_TYPE
+    ):
         return None
 
     width, height = unpack(">II", data[16:24])

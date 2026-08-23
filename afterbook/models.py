@@ -55,13 +55,14 @@ class Annotation:
     modified_at: str | None = None
 
     @property
-    def sort_key(self) -> tuple[float, float, int, str]:
+    def sort_key(self) -> tuple[float, float, int, str, str]:
         """Return a stable key that follows source book position."""
         return (
             self.location.chapter_index,
             self.location.progress,
             self.location.sort_hint or 0,
             self.created_at or "",
+            self.source_id or "",
         )
 
 

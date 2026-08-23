@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from afterbook.images import image_metadata
 from afterbook.models import CoverImage
@@ -20,6 +20,18 @@ QT_HASH_HIGH_BITS_MASK = 0xF0000000
 QT_HASH_VALUE_MASK = 0x0FFFFFFF
 QT_HASH_SHIFT = 23
 HASH_DIRECTORY_MASK = 0xFF
+
+
+def is_cover_cache_image_id(image_id: str) -> bool:
+    """Return whether an image ID can be used as one cache filename component."""
+    windows_path = PureWindowsPath(image_id)
+    return (
+        image_id != ""
+        and "/" not in image_id
+        and "\\" not in image_id
+        and windows_path.drive == ""
+        and windows_path.root == ""
+    )
 
 
 def qt_hash(data: bytes) -> int:
@@ -47,6 +59,9 @@ def cover_cache_filename(image_id: str, variant: str) -> str:
 
 def cached_cover_path(kobo_root: Path, image_id: str) -> Path | None:
     """Find the highest-priority cached cover available for a book."""
+    if not is_cover_cache_image_id(image_id):
+        return None
+
     cache_directory = cover_cache_directory(kobo_root, image_id)
     if not cache_directory.is_dir():
         return None

@@ -4,10 +4,15 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+from afterbook.models import Book
 from afterbook.readers.kobo.database import (
     KOBO_HIGHLIGHT_PALETTE,
+    ChapterRecord,
     KoboRepository,
     open_database,
+    optional_float,
+    raw_json_value,
+    resolve_chapter,
 )
 
 
@@ -64,6 +69,64 @@ def test_raw_kobo_rows_preserve_reader_specific_metadata(kobo_database: Path) ->
         "Surrounding context for chapter two."
     )
     assert raw_annotations_by_id["bookmark-blue"]["StartOffset"] == 4
+
+
+def test_raw_kobo_rows_follow_export_order(kobo_database: Path) -> None:
+    with closing(open_database(kobo_database)) as connection:
+        repository = KoboRepository(connection)
+        book = repository.list_books()[0]
+        raw_annotations = repository.raw_annotations_for(book)
+        raw_chapters = repository.raw_chapters_for(book)
+
+    assert [annotation["BookmarkID"] for annotation in raw_annotations] == [
+        "bookmark-yellow",
+        "bookmark-pink",
+        "bookmark-blue",
+        "bookmark-green",
+    ]
+    assert [chapter["Title"] for chapter in raw_chapters] == [
+        "The First Chapter",
+        "The Second Chapter",
+    ]
+
+
+def test_raw_kobo_rows_use_spine_order_before_lexical_content_id(tmp_path: Path) -> None:
+    database = tmp_path / "chapter-numbering.sqlite"
+    connection = sqlite3.connect(database)
+    connection.executescript("""
+        CREATE TABLE content (
+            ContentID TEXT PRIMARY KEY,
+            BookID TEXT,
+            Title TEXT,
+            SpineIndex REAL
+        );
+        CREATE TABLE Bookmark (
+            BookmarkID TEXT,
+            VolumeID TEXT,
+            ContentID TEXT,
+            Text TEXT,
+            Annotation TEXT,
+            ChapterProgress REAL
+        );
+        INSERT INTO content (ContentID, Title) VALUES ('book-id', 'Book');
+        INSERT INTO content VALUES ('book-id/chapter-2', 'book-id', 'Chapter 2', 2);
+        INSERT INTO content VALUES ('book-id/chapter-10', 'book-id', 'Chapter 10', 10);
+        INSERT INTO Bookmark VALUES (
+            'ten', 'book-id', 'book-id/chapter-10#kobo.1', 'chapter ten', '', 0.1
+        );
+        INSERT INTO Bookmark VALUES (
+            'two', 'book-id', 'book-id/chapter-2#kobo.1', 'chapter two', '', 0.1
+        );
+        """)
+    connection.commit()
+    connection.close()
+
+    with closing(open_database(database)) as copied:
+        repository = KoboRepository(copied)
+        book = repository.list_books()[0]
+        raw_annotations = repository.raw_annotations_for(book)
+
+    assert [annotation["BookmarkID"] for annotation in raw_annotations] == ["two", "ten"]
 
 
 def test_kobo_color_codes_use_reference_palette() -> None:
@@ -197,3 +260,61 @@ def test_rows_without_volume_id_do_not_create_phantom_books(tmp_path: Path) -> N
         books = KoboRepository(copied).list_books()
 
     assert books == []
+
+
+def test_raw_chapters_tolerate_missing_order_columns(tmp_path: Path) -> None:
+    database = tmp_path / "sparse-chapters.sqlite"
+    connection = sqlite3.connect(database)
+    connection.executescript("""
+        CREATE TABLE content (BookID TEXT, Title TEXT);
+        INSERT INTO content VALUES ('book-id', 'Loose chapter');
+        """)
+    connection.commit()
+    connection.close()
+
+    with closing(open_database(database)) as copied:
+        chapters = KoboRepository(copied).raw_chapters_for(Book("book-id", "Book"))
+
+    assert chapters == [{"BookID": "book-id", "Title": "Loose chapter"}]
+
+
+def test_hidden_filter_trims_text_values(tmp_path: Path) -> None:
+    database = tmp_path / "hidden-whitespace.sqlite"
+    connection = sqlite3.connect(database)
+    connection.executescript("""
+        CREATE TABLE content (ContentID TEXT PRIMARY KEY, Title TEXT);
+        CREATE TABLE Bookmark (VolumeID TEXT, Text TEXT, Annotation TEXT, Hidden TEXT);
+        INSERT INTO content VALUES ('book-id', 'Book');
+        INSERT INTO Bookmark VALUES ('book-id', 'visible highlight', '', ' false ');
+        INSERT INTO Bookmark VALUES ('book-id', 'hidden highlight', '', ' TRUE ');
+        """)
+    connection.commit()
+    connection.close()
+
+    with closing(open_database(database)) as copied:
+        repository = KoboRepository(copied)
+        book = repository.list_books()[0]
+        annotations = repository.annotations_for(book)
+        raw_annotations = repository.raw_annotations_for(book)
+
+    assert book.highlight_count == 1
+    assert [annotation.text for annotation in annotations] == ["visible highlight"]
+    assert [annotation["Text"] for annotation in raw_annotations] == ["visible highlight"]
+
+
+def test_non_finite_sqlite_numbers_do_not_reach_models_or_raw_json() -> None:
+    assert optional_float("NaN") is None
+    assert optional_float("inf") is None
+    assert raw_json_value(float("nan")) == "nan"
+
+
+def test_chapter_matching_requires_a_prefix_boundary() -> None:
+    records = [ChapterRecord("Chapter 1", "book/chapter-1", 1.0)]
+
+    assert resolve_chapter(records, "book/chapter-10#kobo.1") == ("Unknown chapter", 0.0)
+
+
+def test_chapter_matching_allows_extension_boundaries() -> None:
+    records = [ChapterRecord("Chapter", "book/chapter", 1.0)]
+
+    assert resolve_chapter(records, "book/chapter.xhtml#kobo.1") == ("Chapter", 1.0)
