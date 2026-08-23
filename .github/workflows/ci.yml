@@ -15,7 +15,7 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
-      - run: mypy kobokeeps
+      - run: mypy afterbook
       - run: python -m pytest
       - run: python -m build
 

@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from kobokeeps.archive import archive_json
-from kobokeeps.epub_utils import (
+from afterbook.archive import archive_json
+from afterbook.epub_utils import (
     STYLESHEET,
     chapter_document,
     container_document,
@@ -22,8 +22,8 @@ from kobokeeps.epub_utils import (
     package_document,
     title_document,
 )
-from kobokeeps.models import Annotation
-from kobokeeps.readers.base import ReaderExport
+from afterbook.models import Annotation
+from afterbook.readers.base import ReaderExport
 
 EPUB_MIMETYPE = "application/epub+zip"
 CONTENT_DIRECTORY = "OEBPS"
@@ -106,13 +106,13 @@ def write_epub(
     chapters = [
         (title, f"chapter-{index}.xhtml") for index, (title, _) in enumerate(groups, start=1)
     ]
-    identifier = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, book.source_id + ':kobokeeps')}"
+    identifier = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, book.source_id + ':afterbook')}"
     modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     temporary_path: Path | None = None
     try:
         with NamedTemporaryFile(
-            prefix=".kobokeeps-",
+            prefix=".afterbook-",
             suffix=".epub.tmp",
             dir=output_directory,
             delete=False,

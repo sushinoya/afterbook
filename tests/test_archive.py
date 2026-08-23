@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from kobokeeps.archive import archive_json
-from kobokeeps.models import Annotation, AnnotationLocation, Book
-from kobokeeps.readers.base import ReaderExport
+from afterbook.archive import archive_json
+from afterbook.models import Annotation, AnnotationLocation, Book
+from afterbook.readers.base import ReaderExport
 
 
 def test_archive_preserves_normalized_and_raw_reader_data() -> None:

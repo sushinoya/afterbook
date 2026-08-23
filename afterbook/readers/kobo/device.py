@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from kobokeeps.errors import KoboKeepsError
+from afterbook.errors import AfterBookError
 
 DATABASE_RELATIVE_PATH = Path(".kobo") / "KoboReader.sqlite"
 
@@ -101,14 +101,14 @@ def select_device(device_path: Path | None = None) -> KoboDevice:
     if device_path is not None:
         root = device_path.expanduser().resolve()
         if not is_kobo_root(root):
-            raise KoboKeepsError(f"No Kobo database found at {root}")
+            raise AfterBookError(f"No Kobo database found at {root}")
         return KoboDevice(root)
 
     devices = discover_kobos()
     if not devices:
-        raise KoboKeepsError("No connected Kobo eReader found")
+        raise AfterBookError("No connected Kobo eReader found")
     if len(devices) > 1:
-        raise KoboKeepsError("Multiple Kobo eReaders found. Use --device to choose one")
+        raise AfterBookError("Multiple Kobo eReaders found. Use --source to choose one")
     return devices[0]
 
 
@@ -117,14 +117,14 @@ def local_output_directory(output_directory: Path, device_root: Path) -> Path:
     resolved_output = output_directory.expanduser().resolve()
     resolved_device = device_root.resolve()
     if resolved_output == resolved_device or resolved_output.is_relative_to(resolved_device):
-        raise KoboKeepsError("Output directory cannot be on the Kobo eReader")
+        raise AfterBookError("Output directory cannot be on the Kobo eReader")
     return resolved_output
 
 
 @contextmanager
 def database_snapshot(database_path: Path) -> Iterator[Path]:
     """Copy a Kobo database to local temporary storage before SQLite opens it."""
-    with TemporaryDirectory(prefix="kobokeeps-") as temporary_directory:
+    with TemporaryDirectory(prefix="afterbook-") as temporary_directory:
         snapshot_root = Path(temporary_directory)
         snapshot_database = snapshot_root / database_path.name
         shutil.copyfile(database_path, snapshot_database)

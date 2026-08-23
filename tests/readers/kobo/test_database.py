@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from kobokeeps.readers.kobo.database import (
+from afterbook.readers.kobo.database import (
     KOBO_HIGHLIGHT_PALETTE,
     KoboRepository,
     open_database,

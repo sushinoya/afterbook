@@ -3,10 +3,10 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kobokeeps"
+name = "afterbook"
 dynamic = ["version"]
-description = "Preserve Kobo highlights and notes as personal books you can keep"
-keywords = ["kobo", "epub", "highlights", "annotations", "overdrive", "libby"]
+description = "Preserve ebook reader highlights and notes as personal books you can keep"
+keywords = ["ebook", "epub", "highlights", "annotations", "kobo", "overdrive", "libby"]
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -30,12 +30,12 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sushinoya/kobo-keeps"
-Repository = "https://github.com/sushinoya/kobo-keeps"
-Issues = "https://github.com/sushinoya/kobo-keeps/issues"
+Homepage = "https://github.com/sushinoya/afterbook"
+Repository = "https://github.com/sushinoya/afterbook"
+Issues = "https://github.com/sushinoya/afterbook/issues"
 
 [project.scripts]
-kobokeeps = "kobokeeps.cli:main"
+afterbook = "afterbook.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -46,10 +46,10 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["kobokeeps", "kobokeeps.readers", "kobokeeps.readers.kobo"]
+packages = ["afterbook", "afterbook.readers", "afterbook.readers.kobo"]
 
 [tool.setuptools.dynamic]
-version = { attr = "kobokeeps.__version__" }
+version = { attr = "afterbook.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -68,7 +68,7 @@ max-line-length = 100
 [tool.mypy]
 python_version = "3.10"
 strict = true
-packages = ["kobokeeps"]
+packages = ["afterbook"]
 
 [[tool.mypy.overrides]]
 module = ["questionary", "questionary.*"]

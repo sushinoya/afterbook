@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kobokeeps.readers.kobo.cover import (
+from afterbook.readers.kobo.cover import (
     COVER_VARIANT_PRIORITY,
     cached_cover_path,
     cover_cache_directory,

@@ -1,11 +1,12 @@
-"""Build the XML and XHTML documents stored inside a KoboKeeps EPUB."""
+"""Build the XML and XHTML documents stored inside an AfterBook EPUB."""
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from typing import cast
 
-from kobokeeps.models import Annotation, Book, CoverImage, highlight_color
+from afterbook.models import Annotation, Book, CoverImage
 
 XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml"
 EPUB_NAMESPACE = "http://www.idpf.org/2007/ops"
@@ -16,6 +17,8 @@ DC_NAMESPACE = "http://purl.org/dc/elements/1.1/"
 NCX_NAMESPACE = "http://www.daisy.org/z3986/2005/ncx/"
 CONTAINER_NAMESPACE = "urn:oasis:names:tc:opendocument:xmlns:container"
 DCTERMS_PREFIX = "dcterms: http://purl.org/dc/terms/"
+DEFAULT_HIGHLIGHT_COLOR = "#D9D9D9"
+HEX_COLOR_PATTERN = re.compile(r"#[0-9a-fA-F]{6}")
 
 # All reading documents share one stylesheet. Highlight colors stay inline on the
 # selected text because ebook reader renderers tend to handle inline background
@@ -65,6 +68,13 @@ def xml_text(value: str | None) -> str:
     if not value:
         return ""
     return "".join(character for character in value if is_xml_character(character))
+
+
+def highlight_background_color(color_hex: str | None) -> str:
+    """Return a safe CSS color for highlight rendering."""
+    if color_hex and HEX_COLOR_PATTERN.fullmatch(color_hex):
+        return color_hex.upper()
+    return DEFAULT_HIGHLIGHT_COLOR
 
 
 def xml_bytes(root: ET.Element) -> bytes:
@@ -117,13 +127,13 @@ def chapter_document(chapter: str, annotations: list[Annotation], language: str)
         clipping = ET.SubElement(body, "section", {"class": "clipping"})
         if annotation.text:
             paragraph = ET.SubElement(clipping, "p", {"class": "highlight"})
-            color = highlight_color(annotation.color_name, annotation.color_hex)
+            color = highlight_background_color(annotation.color_hex)
             highlight = ET.SubElement(
                 paragraph,
                 "span",
                 {
                     "class": "highlight-text",
-                    "style": f"background-color: {color.hex_value};",
+                    "style": f"background-color: {color};",
                 },
             )
             highlight.text = xml_text(annotation.text)

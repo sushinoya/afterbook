@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from kobokeeps.models import Book, JsonValue
-from kobokeeps.readers.base import ReaderExport
-from kobokeeps.readers.kobo.cover import load_cover
-from kobokeeps.readers.kobo.database import KoboRepository, open_database, optional_text
-from kobokeeps.readers.kobo.device import (
+from afterbook.models import Book, JsonValue
+from afterbook.readers.base import ReaderExport
+from afterbook.readers.kobo.cover import load_cover
+from afterbook.readers.kobo.database import KoboRepository, open_database, optional_text
+from afterbook.readers.kobo.device import (
     KoboDevice,
     database_snapshot,
     local_output_directory,

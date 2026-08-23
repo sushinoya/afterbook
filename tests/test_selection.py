@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from kobokeeps import __version__
-from kobokeeps.errors import KoboKeepsError
-from kobokeeps.models import Book
-from kobokeeps.selection import book_by_number, book_by_title
+from afterbook import __version__
+from afterbook.errors import AfterBookError
+from afterbook.models import Book
+from afterbook.selection import book_by_number, book_by_title
 
 
 def books() -> list[Book]:
@@ -24,12 +24,12 @@ def test_selects_book_by_exact_title() -> None:
 
 
 def test_rejects_invalid_book_number() -> None:
-    with pytest.raises(KoboKeepsError):
+    with pytest.raises(AfterBookError):
         book_by_number(books(), 3)
 
 
 def test_print_books_pluralizes_counts(capsys: pytest.CaptureFixture[str]) -> None:
-    from kobokeeps.cli import print_books
+    from afterbook.cli import print_books
 
     print_books([Book("one", "One Note", highlight_count=1, note_count=1)])
 
@@ -39,9 +39,9 @@ def test_print_books_pluralizes_counts(capsys: pytest.CaptureFixture[str]) -> No
 def test_cli_version_does_not_require_reader_source(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from kobokeeps.cli import run
+    from afterbook.cli import run
 
     with pytest.raises(SystemExit, match="0"):
         run(["--version"])
 
-    assert capsys.readouterr().out.strip() == f"kobokeeps {__version__}"
+    assert capsys.readouterr().out.strip() == f"afterbook {__version__}"

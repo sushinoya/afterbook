@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from kobokeeps.errors import KoboKeepsError
-from kobokeeps.readers.kobo.database import open_database
-from kobokeeps.readers.kobo.device import (
+from afterbook.errors import AfterBookError
+from afterbook.readers.kobo.database import open_database
+from afterbook.readers.kobo.device import (
     database_snapshot,
     discover_kobos,
     local_output_directory,
@@ -42,7 +42,7 @@ def test_discovers_kobo_in_volumes_directory(tmp_path: Path) -> None:
 
 
 def test_linux_mounts_find_user_media_directories(tmp_path: Path) -> None:
-    from kobokeeps.readers.kobo.device import linux_mounts
+    from afterbook.readers.kobo.device import linux_mounts
 
     home = tmp_path / "home" / "reader"
     media_root = tmp_path / "media"
@@ -58,7 +58,7 @@ def test_linux_mounts_find_user_media_directories(tmp_path: Path) -> None:
 
 
 def test_linux_mounts_include_mnt(tmp_path: Path) -> None:
-    from kobokeeps.readers.kobo.device import linux_mounts
+    from afterbook.readers.kobo.device import linux_mounts
 
     home = tmp_path / "home" / "reader"
     media_root = tmp_path / "media"
@@ -73,7 +73,7 @@ def test_linux_mounts_include_mnt(tmp_path: Path) -> None:
 
 
 def test_windows_mounts_filter_existing_drive_roots(tmp_path: Path) -> None:
-    from kobokeeps.readers.kobo.device import windows_mounts
+    from afterbook.readers.kobo.device import windows_mounts
 
     mounted = tmp_path / "E"
     missing = tmp_path / "F"
@@ -86,13 +86,13 @@ def test_rejects_output_on_kobo(tmp_path: Path) -> None:
     device = tmp_path / "KOBOeReader"
     device.mkdir()
 
-    with pytest.raises(KoboKeepsError, match="cannot be on the Kobo"):
+    with pytest.raises(AfterBookError, match="cannot be on the Kobo"):
         local_output_directory(device / "Books", device)
 
 
 def test_allows_output_outside_kobo(tmp_path: Path) -> None:
     device = tmp_path / "KOBOeReader"
-    output = tmp_path / "KoboKeeps"
+    output = tmp_path / "AfterBook"
     device.mkdir()
 
     assert local_output_directory(output, device) == output.resolve()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from kobokeeps.images import image_metadata
+from afterbook.images import image_metadata
 
 
 def png_bytes(width: int, height: int) -> bytes:

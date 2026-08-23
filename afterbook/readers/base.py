@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from kobokeeps.models import Annotation, Book, CoverImage, JsonValue
+from afterbook.models import Annotation, Book, CoverImage, JsonValue
 
 
 @dataclass(frozen=True, slots=True)

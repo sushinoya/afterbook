@@ -1,36 +1,11 @@
-"""Domain models used by KoboKeeps."""
+"""Domain models used by AfterBook."""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
-JsonValue: TypeAlias = (
-    str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
-)
-
-
-@dataclass(frozen=True, slots=True)
-class HighlightColor:
-    """Reference display color for one reader highlight color."""
-
-    name: str
-    hex_value: str
-
-
-DEFAULT_HIGHLIGHT_COLOR = HighlightColor("gray", "#D9D9D9")
-HEX_COLOR_PATTERN = re.compile(r"#[0-9a-fA-F]{6}")
-
-
-def highlight_color(
-    color_name: str | None = None,
-    color_hex: str | None = None,
-) -> HighlightColor:
-    """Map a reader highlight color to a reference display color."""
-    if color_hex and HEX_COLOR_PATTERN.fullmatch(color_hex):
-        return HighlightColor(color_name or "custom", color_hex.upper())
-    return DEFAULT_HIGHLIGHT_COLOR
+JsonValue: TypeAlias = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
 
 
 @dataclass(frozen=True, slots=True)

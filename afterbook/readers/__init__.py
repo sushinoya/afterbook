@@ -7,9 +7,9 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import cast
 
-from kobokeeps.errors import KoboKeepsError
-from kobokeeps.readers.base import EbookReader
-from kobokeeps.readers.kobo import KoboReader, open_kobo_reader
+from afterbook.errors import AfterBookError
+from afterbook.readers.base import EbookReader
+from afterbook.readers.kobo import KoboReader, open_kobo_reader
 
 ReaderOpener = Callable[[Path | None], AbstractContextManager[EbookReader]]
 
@@ -41,4 +41,4 @@ def open_reader(
     opener = READER_OPENERS.get(reader_id)
     if opener is not None:
         return opener(source_path)
-    raise KoboKeepsError(f'Unsupported ebook reader "{reader_id}"')
+    raise AfterBookError(f'Unsupported ebook reader "{reader_id}"')

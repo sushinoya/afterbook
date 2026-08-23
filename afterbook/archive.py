@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
-from kobokeeps.readers.base import ReaderExport
+from afterbook.readers.base import ReaderExport
 
 ARCHIVE_SCHEMA_VERSION = 2
 

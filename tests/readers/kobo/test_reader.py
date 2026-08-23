@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from kobokeeps.errors import KoboKeepsError
-from kobokeeps.readers import open_reader, supported_reader_ids
+from afterbook.errors import AfterBookError
+from afterbook.readers import open_reader, supported_reader_ids
 
 
 def test_kobo_reader_backend_lists_books(kobo_database: Path, tmp_path: Path) -> None:
@@ -38,5 +38,5 @@ def test_supported_reader_ids_start_with_kobo() -> None:
 
 
 def test_rejects_unsupported_reader_backend(tmp_path: Path) -> None:
-    with pytest.raises(KoboKeepsError, match="Unsupported ebook reader"):
+    with pytest.raises(AfterBookError, match="Unsupported ebook reader"):
         open_reader("kindle", tmp_path)

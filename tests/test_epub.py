@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from kobokeeps.epub import safe_filename, write_epub
-from kobokeeps.epub_utils import cover_document
-from kobokeeps.models import Annotation, AnnotationLocation, Book
-from kobokeeps.readers.base import ReaderExport
+from afterbook.epub import safe_filename, write_epub
+from afterbook.epub_utils import cover_document
+from afterbook.models import Annotation, AnnotationLocation, Book
+from afterbook.readers.base import ReaderExport
 
 
 def sample_book() -> Book:
@@ -80,13 +80,11 @@ def test_epub_contains_colored_highlights(tmp_path: Path) -> None:
         chapter_two = epub.read("OEBPS/chapter-2.xhtml").decode()
 
     assert (
-        'style="background-color: #F8E98A;">'
-        "A yellow passage from chapter one.</span>"
+        'style="background-color: #F8E98A;">A yellow passage from chapter one.</span>'
     ) in chapter_one
     assert 'style="background-color: #ECA6C4;">A pink passage.</span>' in chapter_one
     assert (
-        'style="background-color: #9DD9E2;">'
-        "A blue passage from chapter two.</span>"
+        'style="background-color: #9DD9E2;">A blue passage from chapter two.</span>'
     ) in chapter_two
 
 
@@ -134,7 +132,7 @@ def test_epub_stores_mimetype_first_and_uncompressed(tmp_path: Path) -> None:
 
 
 def test_cover_page_is_full_page_and_centered() -> None:
-    from kobokeeps.models import CoverImage
+    from afterbook.models import CoverImage
 
     cover = CoverImage(b"image", "image/jpeg", "jpg", 1264, 1680)
     page = cover_document(cover).decode()
@@ -209,7 +207,7 @@ def test_epub_package_contains_compatibility_metadata(tmp_path: Path) -> None:
 
 
 def test_cover_manifest_marks_svg_page(tmp_path: Path) -> None:
-    from kobokeeps.models import CoverImage
+    from afterbook.models import CoverImage
 
     cover = CoverImage(b"fake jpeg", "image/jpeg", "jpg", 1264, 1680)
     export = replace(make_export(), cover=cover)
@@ -281,10 +279,10 @@ def test_write_epub_preserves_existing_file_when_generation_fails(
     def fail_package_document(*args: object) -> bytes:
         raise RuntimeError("package failure")
 
-    monkeypatch.setattr("kobokeeps.epub.package_document", fail_package_document)
+    monkeypatch.setattr("afterbook.epub.package_document", fail_package_document)
 
     with pytest.raises(RuntimeError, match="package failure"):
         write_epub(export, tmp_path)
 
     assert output_path.read_bytes() == b"previous export"
-    assert list(tmp_path.glob(".kobokeeps-*.epub.tmp")) == []
+    assert list(tmp_path.glob(".afterbook-*.epub.tmp")) == []

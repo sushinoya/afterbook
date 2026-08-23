@@ -1,4 +1,4 @@
-"""Command line interface for KoboKeeps."""
+"""Command line interface for AfterBook."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from kobokeeps import __version__
-from kobokeeps.epub import write_epub
-from kobokeeps.errors import KoboKeepsError
-from kobokeeps.models import Book
-from kobokeeps.readers import default_reader_id, open_reader, supported_reader_ids
-from kobokeeps.selection import (
+from afterbook import __version__
+from afterbook.epub import write_epub
+from afterbook.errors import AfterBookError
+from afterbook.models import Book
+from afterbook.readers import default_reader_id, open_reader, supported_reader_ids
+from afterbook.selection import (
     book_by_id,
     book_by_number,
     book_by_title,
@@ -22,7 +22,7 @@ from kobokeeps.selection import (
 def parser() -> argparse.ArgumentParser:
     """Build the command line parser."""
     argument_parser = argparse.ArgumentParser(
-        prog="kobokeeps",
+        prog="afterbook",
         description="Turn ebook reader highlights and notes into personal books you can keep.",
     )
     argument_parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -46,7 +46,7 @@ def parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--book", help="Exact book title")
     export_parser.add_argument("--book-id", help="Reader content identifier")
     export_parser.add_argument(
-        "--output", type=Path, default=Path.home() / "Documents" / "KoboKeeps"
+        "--output", type=Path, default=Path.home() / "Documents" / "AfterBook"
     )
     return argument_parser
 
@@ -59,7 +59,7 @@ def choose_book(arguments: argparse.Namespace, books: list[Book]) -> Book:
         bool(arguments.book_id),
     ]
     if sum(selectors) > 1:
-        raise KoboKeepsError("Choose only one of a book number, --book, or --book-id")
+        raise AfterBookError("Choose only one of a book number, --book, or --book-id")
     if arguments.number is not None:
         return book_by_number(books, arguments.number)
     if arguments.book:
@@ -83,13 +83,13 @@ def print_books(books: list[Book]) -> None:
 
 
 def run(arguments: list[str] | None = None) -> int:
-    """Run the KoboKeeps CLI."""
+    """Run the AfterBook CLI."""
     parsed = parser().parse_args(arguments)
 
     with open_reader(parsed.reader, parsed.source) as reader:
         books = reader.list_books()
         if not books:
-            raise KoboKeepsError("No books with highlights or notes were found")
+            raise AfterBookError("No books with highlights or notes were found")
 
         if parsed.command == "list":
             print_books(books)
@@ -108,6 +108,6 @@ def main() -> int:
     """Run the CLI and turn expected failures into concise messages."""
     try:
         return run()
-    except KoboKeepsError as error:
-        print(f"kobokeeps: {error}", file=sys.stderr)
+    except AfterBookError as error:
+        print(f"afterbook: {error}", file=sys.stderr)
         return 1

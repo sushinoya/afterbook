@@ -6,20 +6,28 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from kobokeeps.errors import KoboKeepsError
-from kobokeeps.models import (
+from afterbook.errors import AfterBookError
+from afterbook.models import (
     Annotation,
     AnnotationLocation,
     Book,
-    HighlightColor,
     JsonValue,
 )
 
+
+@dataclass(frozen=True, slots=True)
+class KoboHighlightColor:
+    """Display color for one Kobo highlight color code."""
+
+    name: str
+    hex_value: str
+
+
 KOBO_HIGHLIGHT_PALETTE = {
-    0: HighlightColor("yellow", "#F8E98A"),
-    1: HighlightColor("pink", "#ECA6C4"),
-    2: HighlightColor("blue", "#9DD9E2"),
-    3: HighlightColor("green", "#C4DC88"),
+    0: KoboHighlightColor("yellow", "#F8E98A"),
+    1: KoboHighlightColor("pink", "#ECA6C4"),
+    2: KoboHighlightColor("blue", "#9DD9E2"),
+    3: KoboHighlightColor("green", "#C4DC88"),
 }
 
 ANNOTATION_COLUMNS = {
@@ -174,9 +182,9 @@ class KoboRepository:
         bookmark_columns = table_columns(self.connection, "Bookmark")
         content_columns = table_columns(self.connection, "content")
         if "VolumeID" not in bookmark_columns:
-            raise KoboKeepsError("Unsupported Kobo database: Bookmark.VolumeID is missing")
+            raise AfterBookError("Unsupported Kobo database: Bookmark.VolumeID is missing")
         if "ContentID" not in content_columns:
-            raise KoboKeepsError("Unsupported Kobo database: content.ContentID is missing")
+            raise AfterBookError("Unsupported Kobo database: content.ContentID is missing")
 
         text_value = "TRIM(COALESCE(b.\"Text\", ''))" if "Text" in bookmark_columns else "''"
         note_value = (

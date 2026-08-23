@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kobokeeps.images import image_metadata
-from kobokeeps.models import CoverImage
+from afterbook.images import image_metadata
+from afterbook.models import CoverImage
 
 KOBO_IMAGE_CACHE_DIRECTORY = ".kobo-images"
 KOBO_PARSED_IMAGE_SUFFIX = ".parsed"
