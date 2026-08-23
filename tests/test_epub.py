@@ -140,7 +140,22 @@ def test_cover_page_is_full_page_and_centered() -> None:
     assert "@page { margin: 0; padding: 0; }" in page
     assert 'viewBox="0 0 1264 1680"' in page
     assert 'preserveAspectRatio="xMidYMid meet"' in page
-    assert "display: block; width: 100%; height: 100%" in page
+    assert "display: table;" in page
+    assert "position: absolute;" in page
+    assert "top: 0;" in page
+    assert "left: 0;" in page
+    assert "display: table-cell;" in page
+    assert "font-size: 0;" in page
+    assert "line-height: 0;" in page
+    assert "text-align: center;" in page
+    assert "vertical-align: middle;" in page
+    assert "display: inline-block;" in page
+    assert "max-width: 100%;" in page
+    assert "max-height: 100%;" in page
+    assert "margin: auto;" in page
+    assert 'class="cover-frame"' in page
+    assert 'class="cover-cell"' in page
+    assert 'class="cover-image"' in page
     assert 'epub:type="cover"' in page
     assert 'meta name="viewport" content="width=1264, height=1680"' in page
 

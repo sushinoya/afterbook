@@ -48,7 +48,36 @@ COVER_STYLESHEET = """
 @page { margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
 body { overflow: hidden; }
-svg { display: block; width: 100%; height: 100%; margin: 0; padding: 0; }
+.cover-frame {
+  display: table;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+.cover-cell {
+  display: table-cell;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+  text-align: center;
+  vertical-align: middle;
+}
+.cover-image {
+  display: inline-block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  margin: auto;
+  padding: 0;
+}
 """.strip()
 
 
@@ -167,12 +196,15 @@ def cover_document(cover: CoverImage) -> bytes:
     ET.SubElement(head, "style", {"type": "text/css"}).text = COVER_STYLESHEET
 
     body = ET.SubElement(root, "body", {"epub:type": "cover"})
+    frame = ET.SubElement(body, "div", {"class": "cover-frame"})
+    cell = ET.SubElement(frame, "div", {"class": "cover-cell"})
     svg = ET.SubElement(
-        body,
+        cell,
         "svg",
         {
             "xmlns": SVG_NAMESPACE,
             "xmlns:xlink": XLINK_NAMESPACE,
+            "class": "cover-image",
             "width": "100%",
             "height": "100%",
             "viewBox": f"0 0 {cover.width} {cover.height}",
