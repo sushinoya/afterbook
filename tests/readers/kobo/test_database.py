@@ -162,6 +162,28 @@ def test_missing_optional_columns_are_tolerated(tmp_path: Path) -> None:
     assert annotations[0].color_name is None
 
 
+def test_annotation_text_strips_surrounding_whitespace(tmp_path: Path) -> None:
+    database = tmp_path / "highlight-whitespace.sqlite"
+    connection = sqlite3.connect(database)
+    connection.executescript("""
+        CREATE TABLE content (ContentID TEXT PRIMARY KEY, Title TEXT);
+        CREATE TABLE Bookmark (VolumeID TEXT, Text TEXT, Annotation TEXT);
+        INSERT INTO content VALUES ('book-id', 'Book');
+        INSERT INTO Bookmark VALUES ('book-id', '  highlighted passage  ', '');
+        """)
+    connection.commit()
+    connection.close()
+
+    with closing(open_database(database)) as copied:
+        repository = KoboRepository(copied)
+        book = repository.list_books()[0]
+        annotations = repository.annotations_for(book)
+        raw_annotations = repository.raw_annotations_for(book)
+
+    assert annotations[0].text == "highlighted passage"
+    assert raw_annotations[0]["Text"] == "  highlighted passage  "
+
+
 def test_chapter_order_uses_volume_index_when_spine_index_is_null(tmp_path: Path) -> None:
     database = tmp_path / "nullable-spine.sqlite"
     connection = sqlite3.connect(database)

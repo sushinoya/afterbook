@@ -557,7 +557,7 @@ class KoboRepository:
         start_offset = optional_int(row["start_offset"])
         return Annotation(
             source_id=bookmark_id or uuid,
-            text=optional_text(row["text"]) or "",
+            text=(optional_text(row["text"]) or "").strip(),
             note=optional_text(row["note"]) or "",
             location=AnnotationLocation(
                 chapter=chapter,
