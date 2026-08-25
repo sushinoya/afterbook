@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from math import isfinite
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from afterbook.errors import AfterBookError
 from afterbook.models import (
@@ -139,6 +140,92 @@ class ChapterRecord:
     title: str | None
     content_id: str
     spine_index: float
+
+
+PATH_LIKE_CHAPTER_SUFFIXES = frozenset({".htm", ".html", ".xhtml"})
+CHAPTER_FILENAME_TITLES = {
+    "acknowledgments": "Acknowledgments",
+    "acknowledgements": "Acknowledgements",
+    "afterword": "Afterword",
+    "appendix": "Appendix",
+    "authorbio": "Author Bio",
+    "bibliography": "Bibliography",
+    "copyright": "Copyright",
+    "cover": "Cover",
+    "dedication": "Dedication",
+    "endnotes": "Endnotes",
+    "epilogue": "Epilogue",
+    "foreword": "Foreword",
+    "index": "Index",
+    "introduction": "Introduction",
+    "notes": "Notes",
+    "praise": "Praise",
+    "preface": "Preface",
+    "prologue": "Prologue",
+    "title": "Title Page",
+}
+
+
+def looks_like_chapter_path(value: str) -> bool:
+    """Return whether Kobo stored an EPUB resource path instead of a display title."""
+    normalized = value.strip().replace("\\", "/")
+    suffix = PurePosixPath(normalized).suffix.casefold()
+    return suffix in PATH_LIKE_CHAPTER_SUFFIXES
+
+
+def usable_chapter_title(value: str | None) -> str | None:
+    """Return a reader-facing chapter title, ignoring internal resource paths."""
+    if value is None:
+        return None
+    title = value.strip()
+    if not title or looks_like_chapter_path(title):
+        return None
+    return title
+
+
+def filename_stem(value: str) -> str | None:
+    """Return the filename stem from a Kobo content ID or path."""
+    normalized = normalized_content_id(value).replace("\\", "/")
+    if "!!" in normalized:
+        normalized = normalized.split("!!", 1)[1]
+    stem = PurePosixPath(normalized).stem.strip()
+    return stem or None
+
+
+def title_from_filename(value: str) -> str | None:
+    """Derive a readable fallback from a Kobo XHTML resource name."""
+    stem = filename_stem(value)
+    if stem is None:
+        return None
+
+    normalized = re.sub(r"[^a-z0-9]+", "", stem.casefold())
+    if normalized in CHAPTER_FILENAME_TITLES:
+        return CHAPTER_FILENAME_TITLES[normalized]
+
+    chapter_match = re.fullmatch(r"(?:ch|chapter)0*(\d+)", normalized)
+    if chapter_match:
+        return f"Chapter {int(chapter_match.group(1))}"
+
+    back_matter_match = re.fullmatch(r"bm0*(\d+)", normalized)
+    if back_matter_match:
+        return f"Back Matter {int(back_matter_match.group(1))}"
+
+    words = re.sub(r"[_-]+", " ", stem).strip()
+    return words.title() if words else None
+
+
+def display_chapter_title(
+    title: str | None,
+    content_id: str,
+    linked_title: str | None = None,
+) -> str:
+    """Return the best reader-facing chapter title for a Kobo content row."""
+    return (
+        usable_chapter_title(title)
+        or usable_chapter_title(linked_title)
+        or title_from_filename(content_id)
+        or "Unknown chapter"
+    )
 
 
 def bookmark_value(row: sqlite3.Row, bookmark_columns: set[str], column: str) -> object | None:
@@ -415,20 +502,40 @@ class KoboRepository:
         if "BookID" not in columns or "ContentID" not in columns:
             return []
         title_expression = '"Title"' if "Title" in columns else "NULL"
+        bookmarked_expression = (
+            '"ChapterIDBookmarked"' if "ChapterIDBookmarked" in columns else "NULL"
+        )
         index_expression = chapter_index_expression(columns)
         query = (
-            f'SELECT {title_expression} AS title, "ContentID" AS content_id, '
-            f'{index_expression} AS spine_index FROM content WHERE "BookID" = ?'
+            f"SELECT {title_expression} AS title, "
+            f'"ContentID" AS content_id, '
+            f"{bookmarked_expression} AS chapter_id_bookmarked, "
+            f"{index_expression} AS spine_index "
+            'FROM content WHERE "BookID" = ?'
             f"{chapter_order_clause(columns)}"
         )
+        rows = self.connection.execute(query, (book_id,)).fetchall()
+        linked_titles: dict[str, str] = {}
+        for row in rows:
+            parent_content_id = normalized_content_id(
+                optional_text(row["chapter_id_bookmarked"]) or ""
+            )
+            title = usable_chapter_title(optional_text(row["title"]))
+            if parent_content_id and title:
+                linked_titles.setdefault(parent_content_id, title)
+
         records: list[ChapterRecord] = []
-        for row in self.connection.execute(query, (book_id,)).fetchall():
+        for row in rows:
             content_id = normalized_content_id(optional_text(row["content_id"]) or "")
             if not content_id:
                 continue
             records.append(
                 ChapterRecord(
-                    title=optional_text(row["title"]),
+                    title=display_chapter_title(
+                        optional_text(row["title"]),
+                        content_id,
+                        linked_titles.get(content_id),
+                    ),
                     content_id=content_id,
                     spine_index=optional_float(row["spine_index"]) or 0.0,
                 )

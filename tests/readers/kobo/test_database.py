@@ -204,6 +204,111 @@ def test_chapter_order_uses_volume_index_when_spine_index_is_null(tmp_path: Path
     assert [annotation.location.chapter_index for annotation in annotations] == [1.0, 2.0]
 
 
+def test_chapter_titles_use_linked_kobo_navigation_rows(tmp_path: Path) -> None:
+    database = tmp_path / "linked-chapter-title.sqlite"
+    connection = sqlite3.connect(database)
+    connection.executescript("""
+        CREATE TABLE content (
+            ContentID TEXT PRIMARY KEY,
+            BookID TEXT,
+            Title TEXT,
+            VolumeIndex REAL,
+            ChapterIDBookmarked TEXT
+        );
+        CREATE TABLE Bookmark (
+            VolumeID TEXT,
+            ContentID TEXT,
+            Text TEXT,
+            Annotation TEXT,
+            ChapterProgress REAL
+        );
+        INSERT INTO content (ContentID, Title) VALUES ('book-id', 'Book');
+        INSERT INTO content VALUES (
+            'book-id!!e9781501160370/xhtml/ch01.xhtml',
+            'book-id',
+            'e9781501160370/xhtml/ch01.xhtml',
+            6,
+            NULL
+        );
+        INSERT INTO content VALUES (
+            'book-id!!e9781501160370/xhtml/ch01.xhtml-1',
+            'book-id',
+            'Chapter 1: A Boy with His Head in the Stars',
+            4,
+            'book-id!!e9781501160370/xhtml/ch01.xhtml'
+        );
+        INSERT INTO Bookmark VALUES (
+            'book-id',
+            'book-id!!e9781501160370/xhtml/ch01.xhtml#kobo.1',
+            'highlight',
+            '',
+            0.25
+        );
+        """)
+    connection.commit()
+    connection.close()
+
+    with closing(open_database(database)) as copied:
+        repository = KoboRepository(copied)
+        book = repository.list_books()[0]
+        annotation = repository.annotations_for(book)[0]
+
+    assert annotation.location.chapter == "Chapter 1: A Boy with His Head in the Stars"
+
+
+def test_path_like_chapter_titles_fall_back_to_readable_names(tmp_path: Path) -> None:
+    database = tmp_path / "path-chapter-title.sqlite"
+    connection = sqlite3.connect(database)
+    connection.executescript("""
+        CREATE TABLE content (
+            ContentID TEXT PRIMARY KEY,
+            BookID TEXT,
+            Title TEXT,
+            VolumeIndex REAL
+        );
+        CREATE TABLE Bookmark (
+            VolumeID TEXT,
+            ContentID TEXT,
+            Text TEXT,
+            Annotation TEXT
+        );
+        INSERT INTO content (ContentID, Title) VALUES ('book-id', 'Book');
+        INSERT INTO content VALUES (
+            'book-id!!e9781501160370/xhtml/prologue.xhtml',
+            'book-id',
+            'e9781501160370/xhtml/prologue.xhtml',
+            3
+        );
+        INSERT INTO content VALUES (
+            'book-id!!e9781501160370/xhtml/ch02.xhtml',
+            'book-id',
+            'e9781501160370/xhtml/ch02.xhtml',
+            4
+        );
+        INSERT INTO Bookmark VALUES (
+            'book-id',
+            'book-id!!e9781501160370/xhtml/prologue.xhtml#kobo.1',
+            'prologue highlight',
+            ''
+        );
+        INSERT INTO Bookmark VALUES (
+            'book-id',
+            'book-id!!e9781501160370/xhtml/ch02.xhtml#kobo.1',
+            'chapter highlight',
+            ''
+        );
+        """)
+    connection.commit()
+    connection.close()
+
+    with closing(open_database(database)) as copied:
+        repository = KoboRepository(copied)
+        book = repository.list_books()[0]
+        annotations = repository.annotations_for(book)
+
+    assert [annotation.location.chapter for annotation in annotations] == ["Prologue", "Chapter 2"]
+
+
 def test_dynamic_sqlite_numeric_values_are_normalized(tmp_path: Path) -> None:
     database = tmp_path / "string-numerics.sqlite"
     connection = sqlite3.connect(database)
