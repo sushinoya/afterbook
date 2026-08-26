@@ -8,8 +8,6 @@ AfterBook turns highlights and notes from supported ebook readers into a small p
 
 For Kobo, it is particularly useful for OverDrive and Libby loans: export your annotations before the loan disappears, then keep the generated ePub on your Kobo.
 
-AfterBook does not copy or decrypt the source ebook. It reads annotation data, book metadata, and cached covers already stored by the reader.
-
 <details>
 <summary>Disclaimer</summary>
 
@@ -33,6 +31,18 @@ PRs are welcome, AI-assisted or not. Please review and test your changes before 
 Currently supported:
 
 - Kobo eReaders (`--reader kobo`, the default)
+
+## Screenshots
+
+<p align="center">
+  <sub>An AfterBook-generated EPUB on a Kobo Clara Colour, exported highlights, and table of contents</sub>
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/c1d1f672-040d-4d62-8f17-4d6e271b3798" alt="AfterBook EPUB open on a Kobo eReader" title="AfterBook EPUB on Kobo" width="260">
+  <img src="https://github.com/user-attachments/assets/ad9c80fa-c8cf-47a2-8593-73ca6742f737" alt="AfterBook EPUB page showing exported highlights" title="Exported highlights" width="260">
+  <img src="https://github.com/user-attachments/assets/5dd8f6d8-2361-4c2a-8f0b-1b25f7647ea2" alt="AfterBook EPUB table of contents" title="Table of contents" width="260">
+</p>
 
 ## Install
 
