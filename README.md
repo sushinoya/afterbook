@@ -115,15 +115,15 @@ afterbook --source /Volumes/KOBOeReader export
 ## Browser app
 
 AfterBook also has a static browser app in [`web`](web); see
-[`docs/browser-app.md`](docs/browser-app.md) for architecture notes. It uses the
-File System Access API, so it requires a Chromium-based desktop browser such as
-Chrome or Edge. You explicitly choose the mounted `KOBOeReader` drive, and
-AfterBook asks for read-only access.
+[`docs/browser-app.md`](docs/browser-app.md) for architecture notes. It is a
+React and Vite application with reader-agnostic frontend boundaries. Today it
+supports read-only Kobo annotation export through the File System Access API, so
+it requires a Chromium-based desktop browser such as Chrome or Edge.
 
-The browser app has no backend and no accounts. Kobo data stays in the browser:
-JavaScript copies the Kobo database snapshot and selected cached cover into a
-Pyodide worker, then the existing Python implementation lists books and returns
-the generated EPUB bytes.
+The browser app has no backend and no accounts. Reader data stays in the
+browser: the selected reader adapter copies only the files needed for the active
+capability into a Pyodide worker, then the existing Python implementation lists
+books and returns the generated EPUB bytes.
 
 Run it locally:
 
@@ -140,7 +140,7 @@ Deploy it to Netlify with `web` as the base directory:
 
 ```text
 Build command: npm run build
-Publish directory: .
+Publish directory: dist
 ```
 
 The included Netlify config serves the static app and sets the cross-origin
@@ -211,15 +211,15 @@ mypy afterbook
 python -m build
 ```
 
-Run the browser app checks:
+Run the browser app checks with Node 20.19 or newer:
 
 ```console
 cd web
 npm install
-npm run build
 npm run typecheck
 npm run test:unit
 npm run test:browser
+npm run build
 ```
 
 If your default `python3` is older than 3.10, set `AFTERBOOK_PYTHON` to a Python

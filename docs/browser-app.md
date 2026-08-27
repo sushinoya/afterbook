@@ -1,81 +1,81 @@
 # Browser App Architecture
 
-AfterBook's browser app is a static site that runs the existing Kobo reader and
-EPUB export code in Pyodide. The browser layer handles permissions, local file
-reads, worker messaging, preview URLs, and downloads. Python remains the source
-of truth for Kobo database parsing, cover-cache lookup, annotation normalization,
-and EPUB generation.
+AfterBook's browser app is a static React application built with Vite. The
+frontend is organized around reader-agnostic domain interfaces so Kobo is the
+first reader adapter, not the permanent shape of the app.
 
-## User Flow
-
-1. Connect the Kobo eReader over USB.
-2. Open the browser app in a Chromium-based desktop browser.
-3. Choose the mounted `KOBOeReader` directory.
-4. Grant read access when the browser asks.
-5. Pick an annotated book and download `<Book Title> - My Clippings.epub`.
-
-There is no backend, account system, or upload path. Kobo data stays inside the
-browser process.
+There is no backend, account system, or upload path. Reader data stays inside
+the browser process.
 
 ## Runtime Boundaries
 
 ```text
-Browser UI
-  -> File System Access API reads selected Kobo files
-  -> Worker receives a staged database snapshot
-  -> Pyodide runs afterbook.api against /kobo
-  -> Worker returns book metadata or EPUB bytes
-  -> Browser creates a local EPUB download
+React app
+  -> reader registry selects a BrowserReaderAdapter
+  -> adapter requests read-only File System Access API handles
+  -> adapter copies capability-specific files into worker messages
+  -> Pyodide worker stages files under /reader-source
+  -> afterbook.api lists annotations or generates EPUB bytes
+  -> React app downloads the generated EPUB
 ```
 
-The real Kobo filesystem is never mounted into Python. The worker only sees the
-files that the browser copied into Pyodide's in-memory filesystem under `/kobo`.
+The real reader filesystem is never mounted into Python. The worker only sees
+the files copied into Pyodide's in-memory filesystem for the active capability.
 
-The browser reads only:
+For Kobo annotation export, the browser reads only:
 
 - `.kobo/KoboReader.sqlite`
 - `.kobo/KoboReader.sqlite-wal`, when present
 - `.kobo/KoboReader.sqlite-shm`, when present
 - the cached cover file selected from the Python-provided Kobo cover locator
 
-All browser file access is read-only. The app never requests writable handles and
-never calls File System Access APIs with `{ create: true }`.
+All current browser file access is read-only. Future management capabilities
+that require writes should be modeled as separate capabilities with explicit
+permission escalation, backups, validation, and rollback behavior.
 
-## Code Ownership
+## Frontend Boundaries
 
-- `afterbook/api.py` is the narrow Python entry point for embedded callers.
-- `afterbook/epub.py` exposes byte generation while preserving atomic CLI writes.
-- `afterbook/readers/kobo/cover.py` owns Kobo cover-cache hashing and locator
-  construction.
-- `web/src/kobo-files.ts` owns File System Access validation and local file
-  reads.
-- `web/src/worker-client.ts` owns the request/response protocol with the
-  worker.
-- `web/src/pyodide-worker.ts` owns Pyodide initialization and the staged `/kobo`
-  filesystem.
-- `web/src/app.ts` owns UI state, rendering, cover preview URLs, and EPUB
-  downloads.
-- `web/src/constants.ts` owns shared browser strings, DOM ids, worker protocol
-  names, and bridge constants used across modules.
+- `web/src/domain` defines reader-agnostic contracts such as
+  `ReaderDefinition`, `BrowserReaderAdapter`, `ReaderConnection`, and
+  `AnnotationExportCapability`.
+- `web/src/features/annotation-export` owns the current workflow state machine.
+- `web/src/infrastructure/file-system` owns browser File System Access wrappers
+  and path safety.
+- `web/src/infrastructure/readers/kobo` owns Kobo-specific file paths, cover
+  cache lookup, and mapping from Python records into generic reader books.
+- `web/src/infrastructure/readers/reader-registry.ts` is the extension point for
+  additional ebook readers.
+- `web/src/infrastructure/worker` owns the typed worker protocol and the Pyodide
+  runtime.
+- `web/tooling/afterbook-python-package-plugin.ts` packages the local Python source
+  into `dist/python/afterbook.zip` through Vite for both development and
+  production builds.
 
-Keep these boundaries intact when extending the app. In particular, avoid
-duplicating Kobo database or EPUB logic in TypeScript.
+Keep reader-specific logic out of React components. Components should render
+reader-agnostic view models and call feature actions.
+
+## Adding A Reader
+
+Add a new adapter that implements `BrowserReaderAdapter`, then register it in
+`reader-registry.ts`. A reader adapter should expose capabilities rather than
+device-specific UI. For example, a future reader can implement annotation export
+without affecting the current Kobo adapter or React table.
+
+If a reader needs write access, model that as a separate capability from
+annotation export. Read-only export should remain safe by default.
 
 ## Build And Deploy
-
-The browser build compiles TypeScript source into `web/dist` and packages the
-local Python source into `web/python/afterbook.zip`; both generated directories
-are ignored by Git.
 
 ```console
 cd web
 npm install
-npm run build
 npm run dev
+npm run build
 ```
 
-Serve production builds over HTTPS. The included `web/netlify.toml` sets the
-cross-origin isolation headers required by Pyodide.
+Vite emits production assets to `web/dist`. The included `web/netlify.toml`
+publishes that directory and sets the cross-origin isolation headers required by
+Pyodide.
 
 ## Verification
 
@@ -88,15 +88,15 @@ ruff format --check .
 mypy afterbook
 ```
 
-Run the browser checks from `web` with Node 20 or newer:
+Run the browser checks from `web` with Node 20.19 or newer:
 
 ```console
-npm run build
 npm run typecheck
 npm run test:unit
 npm run test:browser
+npm run build
 ```
 
-The browser test uses a synthetic Kobo directory and exercises the real browser
+The browser test uses a synthetic Kobo directory and exercises the real React
 app, real worker, real Pyodide load, packaged Python source, and generated EPUB
 download.
