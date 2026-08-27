@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path, PureWindowsPath
+from typing import TypedDict
 
 from afterbook.images import image_metadata
 from afterbook.models import CoverImage
@@ -15,6 +16,17 @@ COVER_VARIANT_PRIORITY = (
     "N3_LIBRARY_GRID",
     "N3_LIBRARY_LIST",
 )
+
+
+class CoverCacheLocator(TypedDict):
+    """Browser-readable cached-cover locations for one Kobo image ID."""
+
+    image_id: str
+    directory: str
+    priority_candidates: list[str]
+    fallback_prefix: str
+    parsed_suffix: str
+
 
 QT_HASH_HIGH_BITS_MASK = 0xF0000000
 QT_HASH_VALUE_MASK = 0x0FFFFFFF
@@ -46,15 +58,56 @@ def qt_hash(data: bytes) -> int:
 
 def cover_cache_directory(kobo_root: Path, image_id: str) -> Path:
     """Return the two-level cache directory used for a Kobo image ID."""
+    first_directory, second_directory = cover_cache_bucket_names(image_id)
+    return kobo_root / KOBO_IMAGE_CACHE_DIRECTORY / first_directory / second_directory
+
+
+def cover_cache_bucket_names(image_id: str) -> tuple[str, str]:
+    """Return Kobo's two cache bucket names for an image ID."""
     image_hash = qt_hash(image_id.encode("utf-8"))
     first_directory = image_hash & HASH_DIRECTORY_MASK
     second_directory = (image_hash >> 8) & HASH_DIRECTORY_MASK
-    return kobo_root / KOBO_IMAGE_CACHE_DIRECTORY / str(first_directory) / str(second_directory)
+    return str(first_directory), str(second_directory)
+
+
+def cover_cache_relative_directory(image_id: str) -> str | None:
+    """Return the Kobo image-cache directory relative to the device root."""
+    if not is_cover_cache_image_id(image_id):
+        return None
+
+    first_directory, second_directory = cover_cache_bucket_names(image_id)
+    return f"{KOBO_IMAGE_CACHE_DIRECTORY}/{first_directory}/{second_directory}"
 
 
 def cover_cache_filename(image_id: str, variant: str) -> str:
     """Return Kobo's cached filename for one cover variant."""
     return f"{image_id} - {variant}{KOBO_PARSED_IMAGE_SUFFIX}"
+
+
+def cover_cache_filename_prefix(image_id: str) -> str:
+    """Return the shared prefix for all cached cover variants of one image ID."""
+    return f"{image_id} - "
+
+
+def cover_cache_locator(image_id: str | None) -> CoverCacheLocator | None:
+    """Return browser-readable cached-cover lookup data for an image ID."""
+    if not image_id:
+        return None
+
+    directory = cover_cache_relative_directory(image_id)
+    if directory is None:
+        return None
+
+    return {
+        "image_id": image_id,
+        "directory": directory,
+        "priority_candidates": [
+            f"{directory}/{cover_cache_filename(image_id, variant)}"
+            for variant in COVER_VARIANT_PRIORITY
+        ],
+        "fallback_prefix": cover_cache_filename_prefix(image_id),
+        "parsed_suffix": KOBO_PARSED_IMAGE_SUFFIX,
+    }
 
 
 def cached_cover_path(kobo_root: Path, image_id: str) -> Path | None:
@@ -73,7 +126,7 @@ def cached_cover_path(kobo_root: Path, image_id: str) -> Path | None:
         if candidate.is_file():
             return candidate
 
-    prefix = f"{image_id} - "
+    prefix = cover_cache_filename_prefix(image_id)
     candidates = [
         path
         for path in cache_directory.iterdir()

@@ -10,7 +10,7 @@ from typing import cast
 
 from afterbook.models import Book, JsonValue
 from afterbook.readers.base import ReaderExport
-from afterbook.readers.kobo.cover import load_cover
+from afterbook.readers.kobo.cover import CoverCacheLocator, cover_cache_locator, load_cover
 from afterbook.readers.kobo.database import KoboRepository, open_database, optional_text
 from afterbook.readers.kobo.device import (
     KoboDevice,
@@ -38,6 +38,12 @@ class KoboReader:
     def list_books(self) -> list[Book]:
         """Return Kobo books with highlights or notes."""
         return self.repository.list_books()
+
+    def cover_locator_for(self, book: Book) -> CoverCacheLocator | None:
+        """Return browser-readable cached-cover lookup data for a book."""
+        raw_book = self.repository.raw_book_for(book)
+        image_id = optional_text(raw_book.get("ImageId"))
+        return cover_cache_locator(image_id)
 
     def export_for(self, book: Book) -> ReaderExport:
         """Return normalized Kobo export data plus raw SQLite rows."""

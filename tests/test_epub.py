@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import replace
@@ -7,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from afterbook.epub import safe_filename, write_epub
+from afterbook.epub import epub_bytes, epub_filename, safe_filename, write_epub
 from afterbook.epub_utils import cover_document
 from afterbook.models import Annotation, AnnotationLocation, Book
 from afterbook.readers.base import ReaderExport
@@ -86,6 +87,17 @@ def test_epub_contains_colored_highlights(tmp_path: Path) -> None:
     assert (
         'style="background-color: #9DD9E2;">A blue passage from chapter two.</span>'
     ) in chapter_two
+
+
+def test_epub_bytes_returns_valid_epub_without_writing(tmp_path: Path) -> None:
+    export = make_export()
+    data = epub_bytes(export)
+
+    assert epub_filename(export) == "Why Fish Don't Exist - My Clippings.epub"
+    assert list(tmp_path.iterdir()) == []
+    with zipfile.ZipFile(io.BytesIO(data)) as epub:
+        assert epub.read("mimetype") == b"application/epub+zip"
+        assert "OEBPS/archive/annotations.json" in epub.namelist()
 
 
 def test_epub_can_render_reader_hex_colors(tmp_path: Path) -> None:

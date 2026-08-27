@@ -4,6 +4,8 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+import pytest
+
 from afterbook.models import Book
 from afterbook.readers.kobo.database import (
     KOBO_HIGHLIGHT_PALETTE,
@@ -26,6 +28,14 @@ def test_lists_books_with_annotation_counts(kobo_database: Path) -> None:
     ]
     assert books[0].highlight_count == 4
     assert books[0].note_count == 1
+
+
+def test_open_database_uses_query_only_mode(kobo_database: Path) -> None:
+    with (
+        closing(open_database(kobo_database)) as connection,
+        pytest.raises(sqlite3.OperationalError, match="readonly"),
+    ):
+        connection.execute("CREATE TABLE should_not_write (value TEXT)")
 
 
 def test_annotations_follow_book_order(kobo_database: Path) -> None:

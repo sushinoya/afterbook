@@ -8,8 +8,10 @@ import uuid
 import zipfile
 from contextlib import suppress
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import BinaryIO
 
 from afterbook.archive import archive_json
 from afterbook.epub_utils import (
@@ -89,18 +91,25 @@ def content_path(filename: str) -> str:
     return f"{CONTENT_DIRECTORY}/{filename}"
 
 
-def write_epub(
-    export: ReaderExport,
-    output_directory: Path,
-) -> Path:
-    """Write a standalone clipping EPUB and return its path."""
+def epub_filename(export: ReaderExport) -> str:
+    """Return the portable clipping EPUB filename for an export."""
+    return f"{safe_filename(f'{export.book.title} - My Clippings')}.epub"
+
+
+def epub_bytes(export: ReaderExport) -> bytes:
+    """Return a standalone clipping EPUB as bytes."""
+    output = BytesIO()
+    write_epub_archive(export, output)
+    return output.getvalue()
+
+
+def write_epub_archive(export: ReaderExport, target: str | Path | BinaryIO) -> None:
+    """Write a standalone clipping EPUB archive to a path or binary file."""
     book = export.book
     annotations = export.annotations
     cover = export.cover
     output_title = f"{book.title} - My Clippings"
     language = book.language or "en"
-    output_directory.mkdir(parents=True, exist_ok=True)
-    output_path = output_directory / f"{safe_filename(output_title)}.epub"
 
     groups = grouped_annotations(annotations)
     chapters = [
@@ -108,6 +117,51 @@ def write_epub(
     ]
     identifier = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, book.source_id + ':afterbook')}"
     modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as epub:
+        # EPUB requires mimetype to be the first ZIP entry and stored without compression.
+        epub.writestr("mimetype", EPUB_MIMETYPE, compress_type=zipfile.ZIP_STORED)
+        epub.writestr(CONTAINER_PATH, container_document())
+        epub.writestr(STYLESHEET_PATH, STYLESHEET)
+        epub.writestr(TITLE_PATH, title_document(book, output_title, language))
+        epub.writestr(NAVIGATION_PATH, navigation_document(chapters, language))
+        epub.writestr(NCX_PATH, ncx_document(output_title, identifier, chapters))
+        epub.writestr(ANNOTATION_ARCHIVE_PATH, archive_json(export))
+
+        for (chapter_title, chapter_annotations), (_, filename) in zip(
+            groups, chapters, strict=True
+        ):
+            epub.writestr(
+                content_path(filename),
+                chapter_document(chapter_title, chapter_annotations, language),
+            )
+
+        if cover is not None:
+            epub.writestr(content_path(f"cover.{cover.extension}"), cover.data)
+            epub.writestr(COVER_PAGE_PATH, cover_document(cover))
+
+        # content.opf is written last because it describes every resource above.
+        epub.writestr(
+            PACKAGE_PATH,
+            package_document(
+                book,
+                output_title,
+                identifier,
+                language,
+                chapters,
+                cover,
+                modified,
+            ),
+        )
+
+
+def write_epub(
+    export: ReaderExport,
+    output_directory: Path,
+) -> Path:
+    """Write a standalone clipping EPUB and return its path."""
+    output_directory.mkdir(parents=True, exist_ok=True)
+    output_path = output_directory / epub_filename(export)
 
     temporary_path: Path | None = None
     try:
@@ -119,42 +173,7 @@ def write_epub(
         ) as temporary_file:
             temporary_path = Path(temporary_file.name)
 
-        with zipfile.ZipFile(temporary_path, "w", compression=zipfile.ZIP_DEFLATED) as epub:
-            # EPUB requires mimetype to be the first ZIP entry and stored without compression.
-            epub.writestr("mimetype", EPUB_MIMETYPE, compress_type=zipfile.ZIP_STORED)
-            epub.writestr(CONTAINER_PATH, container_document())
-            epub.writestr(STYLESHEET_PATH, STYLESHEET)
-            epub.writestr(TITLE_PATH, title_document(book, output_title, language))
-            epub.writestr(NAVIGATION_PATH, navigation_document(chapters, language))
-            epub.writestr(NCX_PATH, ncx_document(output_title, identifier, chapters))
-            epub.writestr(ANNOTATION_ARCHIVE_PATH, archive_json(export))
-
-            for (chapter_title, chapter_annotations), (_, filename) in zip(
-                groups, chapters, strict=True
-            ):
-                epub.writestr(
-                    content_path(filename),
-                    chapter_document(chapter_title, chapter_annotations, language),
-                )
-
-            if cover is not None:
-                epub.writestr(content_path(f"cover.{cover.extension}"), cover.data)
-                epub.writestr(COVER_PAGE_PATH, cover_document(cover))
-
-            # content.opf is written last because it describes every resource above.
-            epub.writestr(
-                PACKAGE_PATH,
-                package_document(
-                    book,
-                    output_title,
-                    identifier,
-                    language,
-                    chapters,
-                    cover,
-                    modified,
-                ),
-            )
-
+        write_epub_archive(export, temporary_path)
         temporary_path.replace(output_path)
     finally:
         if temporary_path is not None and temporary_path.exists():
