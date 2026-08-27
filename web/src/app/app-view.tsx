@@ -216,15 +216,15 @@ function ConnectionWizard({
 
 const CONNECTION_STEPS = [
   {
-    title: "Connect your device",
+    title: "Connect your e-reader",
     description:
-      "Plug in your e-reader and choose file transfer or mount mode if the device asks.",
+      "Plug in your e-reader and choose the option that lets this computer access its files.",
     icon: <HardDrive size={30} aria-hidden="true" />,
   },
   {
-    title: "Select the reader folder",
+    title: "Choose your e-reader",
     description:
-      "When the browser picker opens, choose the reader drive or mounted folder.",
+      "When the browser prompt opens, select your e-reader from the sidebar or choose its drive.",
     icon: <FolderOpen size={30} aria-hidden="true" />,
   },
 ] as const;
@@ -302,7 +302,7 @@ function LibraryView({
         <div className="library-empty">
           <LibraryBig size={26} aria-hidden="true" />
           <strong>No annotated books found.</strong>
-          <span>Try another reader folder if you expected to see saved highlights.</span>
+          <span>Choose a different reader if you expected to see saved highlights.</span>
         </div>
       )}
     </section>
