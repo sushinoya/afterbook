@@ -77,19 +77,47 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   } satisfies BrowserHarness);
 
   await page.goto("/");
-  await expect(page.getByText("Reader management console")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Annotation Export" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bring your highlights home." })).toBeVisible();
+  await page.getByRole("button", { name: "Get started" }).click();
+  await expect(page.getByRole("heading", { name: "Connect your device" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Annotated books" })).toBeHidden();
 
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Select the reader folder" })).toBeVisible();
   await page.getByRole("button", { name: "Connect Reader" }).click();
 
-  await expect(page.getByRole("cell", { name: "Browser Fixture Test Author" })).toBeVisible({
+  const fixtureBook = page.getByRole("button", { name: "Open Browser Fixture" });
+  await expect(fixtureBook).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByAltText("Browser Fixture cover")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: "Annotated books" })).toBeVisible();
+  await expect(page.locator('[aria-label="Browser Fixture cover"], img[alt="Browser Fixture cover"]')).toBeVisible({
+    timeout: 60_000,
+  });
   await expect(page.getByText("1 title ready.")).toBeVisible({ timeout: 60_000 });
 
+  await fixtureBook.click();
+  const dialog = page.getByRole("dialog", { name: "Browser Fixture" });
+  await expect(dialog).toBeVisible({ timeout: 60_000 });
+  await expect(dialog.getByText(/Page 1 of \d+/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Next EPUB page" }).click();
+  await dialog.getByRole("button", { name: "Next EPUB page" }).click();
+  await expect(dialog.getByText("A browser-tested highlight.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Next EPUB page" }).click();
+  await expect(dialog.getByText("A browser-tested note.")).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Close book" }).click();
+  await expect(dialog).toBeHidden();
+
+  await fixtureBook.click();
+  await expect(dialog).toBeVisible();
+  await page.mouse.click(8, 8);
+  await expect(dialog).toBeHidden();
+
+  await fixtureBook.click();
+  await expect(dialog).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export EPUB" }).click();
+  await dialog.getByRole("button", { name: "Export EPUB" }).click();
   const download = await downloadPromise;
 
   assert.equal(download.suggestedFilename(), fixture.export.filename);
@@ -107,7 +135,9 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
     ".kobo/KoboReader.sqlite-wal",
     ".kobo/KoboReader.sqlite-shm",
   ]);
-  const exportMessage = events.workerMessages[1];
+  const exportMessage = events.workerMessages.find(
+    (message) => message.type === WORKER_REQUESTS.generateAnnotationEpub,
+  );
   assert.ok(exportMessage);
   assert.equal(exportMessage.type, WORKER_REQUESTS.generateAnnotationEpub);
   assert.equal(exportMessage.bookId, "browser-fixture-book");
@@ -123,6 +153,8 @@ test("explains when the File System Access API is unavailable", async ({ page })
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Get started" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
 
   await expect(page.getByRole("status")).toHaveText("No reader connected.");
   await page.getByRole("button", { name: "Connect Reader" }).click();
@@ -147,6 +179,8 @@ test("handles denied read permission", async ({ page }) => {
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Get started" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Connect Reader" }).click();
 
   await expect(page.getByRole("status")).toHaveText("Afterbook needs read access to continue.");
@@ -165,6 +199,8 @@ test("handles a selected folder without the Kobo database", async ({ page }) => 
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Get started" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Connect Reader" }).click();
 
   await expect(page.getByRole("status")).toHaveText("Selected source is not a supported reader.");
@@ -172,7 +208,7 @@ test("handles a selected folder without the Kobo database", async ({ page }) => 
 
 function buildFixture(): BrowserFixture {
   return JSON.parse(
-    execFileSync(PYTHON, ["tests/fixture_builder.py"], {
+    execFileSync(PYTHON, ["tests/fixtures/kobo-reader-fixture.py"], {
       cwd: WEB_ROOT,
       encoding: "utf8",
     }),

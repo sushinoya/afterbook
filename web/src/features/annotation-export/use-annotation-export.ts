@@ -3,9 +3,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { ReaderConnectionError, errorMessage, errorName } from "../../domain/errors.js";
 import type {
   ReaderBook,
-  ReaderAnnotation,
   ReaderConnection,
   ReaderDefinition,
+  GeneratedEpub,
   ReaderId,
 } from "../../domain/readers.js";
 import type { LocalFile } from "../../infrastructure/file-system/local-files.js";
@@ -20,7 +20,7 @@ export interface AnnotationExportViewModel {
   statusMessage: string;
   activeBookId: string | null;
   selectedBook: ReaderBook | null;
-  selectedAnnotations: readonly ReaderAnnotation[];
+  selectedEpub: GeneratedEpub | null;
   isLoadingSelectedBook: boolean;
   selectReader(readerId: ReaderId): void;
   connectReader(): Promise<void>;
@@ -44,7 +44,7 @@ interface AnnotationExportState {
   books: ReaderBook[];
   covers: Map<string, LocalFile>;
   coverUrls: Map<string, string>;
-  annotationsByBookId: Map<string, ReaderAnnotation[]>;
+  epubsByBookId: Map<string, GeneratedEpub>;
   phase: AnnotationExportPhase;
   statusMessage: string;
   activeBookId: string | null;
@@ -63,10 +63,10 @@ type AnnotationExportAction =
       coverUrls: Map<string, string>;
     }
   | { type: "book-open-started"; bookId: string }
-  | { type: "book-open-completed"; bookId: string; annotations: ReaderAnnotation[] }
+  | { type: "book-open-completed"; bookId: string; epub: GeneratedEpub }
   | { type: "book-closed" }
   | { type: "export-started"; bookId: string }
-  | { type: "export-completed"; filename: string }
+  | { type: "export-completed"; bookId: string; epub: GeneratedEpub }
   | { type: "failed"; message: string }
   | { type: "reset-cover-urls" };
 
@@ -74,7 +74,7 @@ const STATUS_MESSAGES = {
   idle: "No reader connected.",
   connecting: "Connecting to reader source.",
   cataloging: "Reading annotation catalog.",
-  openingBook: "Opening annotations.",
+  openingBook: "Preparing EPUB preview.",
   exporting: "Preparing EPUB.",
 } as const;
 
@@ -93,7 +93,7 @@ export function useAnnotationExport(
     books: [],
     covers: new Map(),
     coverUrls: new Map(),
-    annotationsByBookId: new Map(),
+    epubsByBookId: new Map(),
     phase: "idle",
     statusMessage: STATUS_MESSAGES.idle,
     activeBookId: null,
@@ -109,9 +109,7 @@ export function useAnnotationExport(
     () => state.books.find((book) => book.id === state.selectedBookId) || null,
     [state.books, state.selectedBookId],
   );
-  const selectedAnnotations = selectedBook
-    ? state.annotationsByBookId.get(selectedBook.id) || []
-    : [];
+  const selectedEpub = selectedBook ? state.epubsByBookId.get(selectedBook.id) || null : null;
 
   useEffect(() => {
     return () => {
@@ -158,30 +156,29 @@ export function useAnnotationExport(
   const openBook = useCallback(
     async (book: ReaderBook) => {
       if (!state.connection) {
-        dispatch({ type: "failed", message: "Connect a reader before opening annotations." });
+        dispatch({ type: "failed", message: "Connect a reader before opening an EPUB preview." });
         return;
       }
 
       dispatch({ type: "book-open-started", bookId: book.id });
-      const cachedAnnotations = state.annotationsByBookId.get(book.id);
-      if (cachedAnnotations) {
+      const cachedEpub = state.epubsByBookId.get(book.id);
+      if (cachedEpub) {
         dispatch({
           type: "book-open-completed",
           bookId: book.id,
-          annotations: cachedAnnotations,
+          epub: cachedEpub,
         });
         return;
       }
 
       try {
-        const annotations =
-          await state.connection.capabilities.annotationExport.listAnnotations(book);
-        dispatch({ type: "book-open-completed", bookId: book.id, annotations });
+        const epub = await createGeneratedEpub(state.connection, state.covers, book);
+        dispatch({ type: "book-open-completed", bookId: book.id, epub });
       } catch (error) {
         dispatch({ type: "failed", message: friendlyErrorMessage(error) });
       }
     },
-    [state.annotationsByBookId, state.connection],
+    [state.connection, state.covers, state.epubsByBookId],
   );
 
   const closeBook = useCallback(() => {
@@ -197,20 +194,16 @@ export function useAnnotationExport(
 
       dispatch({ type: "export-started", bookId: book.id });
       try {
-        const coverFile =
-          state.covers.get(book.id) ||
-          (await state.connection.capabilities.annotationExport.findCover(book));
-        const generated = await state.connection.capabilities.annotationExport.exportBook(
-          book,
-          coverFile ? cloneLocalFile(coverFile) : null,
-        );
+        const generated =
+          state.epubsByBookId.get(book.id) ||
+          (await createGeneratedEpub(state.connection, state.covers, book));
         downloadEpub(generated.filename, generated.data);
-        dispatch({ type: "export-completed", filename: generated.filename });
+        dispatch({ type: "export-completed", bookId: book.id, epub: generated });
       } catch (error) {
         dispatch({ type: "failed", message: friendlyErrorMessage(error) });
       }
     },
-    [state.connection, state.covers],
+    [state.connection, state.covers, state.epubsByBookId],
   );
 
   return {
@@ -223,7 +216,7 @@ export function useAnnotationExport(
     statusMessage: state.statusMessage,
     activeBookId: state.activeBookId,
     selectedBook,
-    selectedAnnotations,
+    selectedEpub,
     isLoadingSelectedBook: Boolean(
       state.selectedBookId && state.loadingBookId === state.selectedBookId,
     ),
@@ -248,7 +241,7 @@ function annotationExportReducer(
         books: [],
         covers: new Map(),
         coverUrls: new Map(),
-        annotationsByBookId: new Map(),
+        epubsByBookId: new Map(),
         phase: "idle",
         statusMessage: STATUS_MESSAGES.idle,
         activeBookId: null,
@@ -262,7 +255,7 @@ function annotationExportReducer(
         books: [],
         covers: new Map(),
         coverUrls: new Map(),
-        annotationsByBookId: new Map(),
+        epubsByBookId: new Map(),
         phase: "connecting",
         statusMessage: STATUS_MESSAGES.connecting,
         activeBookId: null,
@@ -282,6 +275,7 @@ function annotationExportReducer(
         books: action.books,
         covers: action.covers,
         coverUrls: action.coverUrls,
+        epubsByBookId: new Map(),
         phase: "ready",
         statusMessage: readyMessage(action.books.length),
         activeBookId: null,
@@ -297,11 +291,11 @@ function annotationExportReducer(
         statusMessage: STATUS_MESSAGES.openingBook,
       };
     case "book-open-completed": {
-      const annotationsByBookId = new Map(state.annotationsByBookId);
-      annotationsByBookId.set(action.bookId, action.annotations);
+      const epubsByBookId = new Map(state.epubsByBookId);
+      epubsByBookId.set(action.bookId, action.epub);
       return {
         ...state,
-        annotationsByBookId,
+        epubsByBookId,
         selectedBookId: action.bookId,
         loadingBookId: null,
         phase: "ready",
@@ -323,13 +317,17 @@ function annotationExportReducer(
         activeBookId: action.bookId,
         statusMessage: STATUS_MESSAGES.exporting,
       };
-    case "export-completed":
+    case "export-completed": {
+      const epubsByBookId = new Map(state.epubsByBookId);
+      epubsByBookId.set(action.bookId, action.epub);
       return {
         ...state,
+        epubsByBookId,
         phase: "ready",
         activeBookId: null,
-        statusMessage: `Downloaded ${action.filename}.`,
+        statusMessage: `Downloaded ${action.epub.filename}.`,
       };
+    }
     case "failed":
       return {
         ...state,
@@ -379,6 +377,19 @@ async function safelyFindCover(connection: ReaderConnection, book: ReaderBook) {
     }
     throw error;
   }
+}
+
+async function createGeneratedEpub(
+  connection: ReaderConnection,
+  covers: ReadonlyMap<string, LocalFile>,
+  book: ReaderBook,
+): Promise<GeneratedEpub> {
+  const coverFile =
+    covers.get(book.id) || (await connection.capabilities.annotationExport.findCover(book));
+  return connection.capabilities.annotationExport.exportBook(
+    book,
+    coverFile ? cloneLocalFile(coverFile) : null,
+  );
 }
 
 function downloadEpub(filename: string, data: Uint8Array) {

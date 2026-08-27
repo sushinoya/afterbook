@@ -43,29 +43,6 @@ describe("Afterbook worker client", () => {
     });
   });
 
-  it("requests annotations for a selected book", async () => {
-    const worker = new FakeWorker();
-    const client = createAfterbookWorkerClient({ worker });
-    const promise = client.listBookAnnotations({
-      readerId: KOBO_READER_ID,
-      bookId: "book-id",
-    });
-
-    const message = worker.messages[0];
-    expect(message?.type).toBe(WORKER_REQUESTS.listBookAnnotations);
-    expect(worker.transfers[0]).toHaveLength(0);
-
-    worker.reply({
-      id: message?.id,
-      type: WORKER_RESPONSES.success,
-      payload: { annotations: [{ source_id: "annotation-id" }] },
-    });
-
-    await expect(promise).resolves.toEqual({
-      annotations: [{ source_id: "annotation-id" }],
-    });
-  });
-
   it("rejects pending work when the worker crashes", async () => {
     const worker = new FakeWorker();
     const client = createAfterbookWorkerClient({ worker });

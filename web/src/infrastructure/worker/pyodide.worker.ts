@@ -3,7 +3,6 @@ import type { LocalFile } from "../file-system/local-files.js";
 import type {
   CatalogAnnotationsInput,
   GenerateAnnotationEpubInput,
-  ListBookAnnotationsInput,
   WorkerRequest,
 } from "./protocol.js";
 import { WORKER_REQUESTS, WORKER_RESPONSES } from "./protocol.js";
@@ -107,15 +106,6 @@ export function createPyodideWorkerController(
         };
       }
 
-      if (message.type === WORKER_REQUESTS.listBookAnnotations) {
-        const payload = annotationInput(message.payload);
-        assertSupportedReader(payload.readerId);
-        runtime.globals.set(PYTHON_GLOBALS.bookId, payload.bookId);
-        return {
-          annotations: JSON.parse(String(runtime.runPython(listKoboBookAnnotationsPython()))),
-        };
-      }
-
       throw new Error(`Unsupported worker request: ${message.type}`);
     },
   };
@@ -216,24 +206,9 @@ ${PYTHON_GLOBALS.exportData} = to_js(result.data)
 `;
 }
 
-function listKoboBookAnnotationsPython(): string {
-  return `
-import json
-from afterbook.api import list_kobo_book_annotations
-json.dumps(list_kobo_book_annotations("${STAGED_READER_ROOT}", ${PYTHON_GLOBALS.bookId}))
-`;
-}
-
 function catalogInput(payload: unknown): CatalogAnnotationsInput {
   if (!isCatalogInput(payload)) {
     throw new Error("Cataloging annotations requires a reader id and file list.");
-  }
-  return payload;
-}
-
-function annotationInput(payload: unknown): ListBookAnnotationsInput {
-  if (!isBookInput(payload)) {
-    throw new Error("Listing annotations requires a reader id and book id.");
   }
   return payload;
 }
@@ -254,18 +229,12 @@ function isCatalogInput(payload: unknown): payload is CatalogAnnotationsInput {
   );
 }
 
-function isBookInput(payload: unknown): payload is ListBookAnnotationsInput {
+function isExportInput(payload: unknown): payload is GenerateAnnotationEpubInput {
   return (
     typeof payload === "object" &&
     payload !== null &&
     typeof (payload as { readerId?: unknown }).readerId === "string" &&
-    typeof (payload as { bookId?: unknown }).bookId === "string"
-  );
-}
-
-function isExportInput(payload: unknown): payload is GenerateAnnotationEpubInput {
-  return (
-    isBookInput(payload) &&
+    typeof (payload as { bookId?: unknown }).bookId === "string" &&
     (((payload as { coverFile?: unknown }).coverFile === null) ||
       typeof (payload as { coverFile?: unknown }).coverFile === "object")
   );

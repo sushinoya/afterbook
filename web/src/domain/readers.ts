@@ -34,7 +34,6 @@ export interface ReaderConnection {
 
 export interface AnnotationExportCapability {
   listBooks(): Promise<ReaderBook[]>;
-  listAnnotations(book: ReaderBook): Promise<ReaderAnnotation[]>;
   findCover(book: ReaderBook): Promise<LocalFile | null>;
   exportBook(book: ReaderBook, coverFile: LocalFile | null): Promise<GeneratedEpub>;
 }
@@ -56,23 +55,6 @@ export interface ReaderBook {
 export interface AnnotationMetrics {
   highlights: number;
   notes: number;
-}
-
-export interface ReaderAnnotation {
-  id: string;
-  text: string;
-  note: string;
-  colorName: string | null;
-  colorHex: string | null;
-  kind: string | null;
-  createdAt: string | null;
-  modifiedAt: string | null;
-  location: {
-    chapter: string;
-    progress: number;
-    locator: string | null;
-    page: string | number | null;
-  };
 }
 
 export interface GeneratedEpub {

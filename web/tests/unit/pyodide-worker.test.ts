@@ -49,22 +49,8 @@ describe("Pyodide worker controller", () => {
 
     expect(listed).toEqual({ books: [{ source_id: "book-id", title: "Book" }] });
 
-    const annotations = await controller.handle({
-      id: 2,
-      type: WORKER_REQUESTS.listBookAnnotations,
-      payload: {
-        readerId: KOBO_READER_ID,
-        bookId: "book-id",
-      },
-    });
-
-    expect(annotations).toEqual({
-      annotations: [{ source_id: "annotation-id", text: "Highlighted text" }],
-    });
-    expect(pyodide.globals.get("_afterbook_book_id")).toBe("book-id");
-
     const exported = await controller.handle({
-      id: 3,
+      id: 2,
       type: WORKER_REQUESTS.generateAnnotationEpub,
       payload: {
         readerId: KOBO_READER_ID,
@@ -97,9 +83,6 @@ function fakePyodide() {
     runPython(code: string) {
       if (code.includes("list_kobo_books")) {
         return JSON.stringify([{ source_id: "book-id", title: "Book" }]);
-      }
-      if (code.includes("list_kobo_book_annotations")) {
-        return JSON.stringify([{ source_id: "annotation-id", text: "Highlighted text" }]);
       }
       if (code.includes("generate_kobo_epub")) {
         globals.set("_afterbook_export_filename", "Book - My Clippings.epub");

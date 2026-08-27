@@ -11,17 +11,17 @@ import {
   Loader2,
   Lock,
   PlugZap,
-  Quote,
   ShieldCheck,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { ReaderAnnotation, ReaderBook, ReaderDefinition } from "../domain/readers.js";
+import type { GeneratedEpub, ReaderBook, ReaderDefinition } from "../domain/readers.js";
 import {
   type AnnotationExportViewModel,
   useAnnotationExport,
 } from "../features/annotation-export/use-annotation-export.js";
+import { parseGeneratedEpubPreview } from "../features/annotation-export/epub-preview.js";
 import { createReaderRegistry } from "../infrastructure/readers/reader-registry.js";
 
 export function AppView() {
@@ -66,7 +66,7 @@ export function AppView() {
       {model.selectedBook ? (
         <BookModal
           book={model.selectedBook}
-          annotations={model.selectedAnnotations}
+          epub={model.selectedEpub}
           coverUrl={model.coverUrls.get(model.selectedBook.id)}
           isLoading={model.isLoadingSelectedBook}
           isExporting={model.phase === "exporting"}
@@ -327,7 +327,7 @@ function LibraryView({
 
 function BookModal({
   book,
-  annotations,
+  epub,
   coverUrl,
   isLoading,
   isExporting,
@@ -336,7 +336,7 @@ function BookModal({
   onExport,
 }: {
   book: ReaderBook;
-  annotations: readonly ReaderAnnotation[];
+  epub: GeneratedEpub | null;
   coverUrl: string | undefined;
   isLoading: boolean;
   isExporting: boolean;
@@ -400,7 +400,7 @@ function BookModal({
             className="secondary-button"
             type="button"
             onClick={() => onExport(book)}
-            disabled={isExporting}
+            disabled={isExporting || isLoading}
           >
             {isActiveExport ? (
               <Loader2 className="spin" size={17} aria-hidden="true" />
@@ -411,89 +411,142 @@ function BookModal({
           </button>
         </header>
 
-        <AnnotationReader annotations={annotations} isLoading={isLoading} />
+        <EpubBookReader book={book} epub={epub} isLoading={isLoading} />
       </section>
     </div>
   );
 }
 
-function AnnotationReader({
-  annotations,
+function EpubBookReader({
+  book,
+  epub,
   isLoading,
 }: {
-  annotations: readonly ReaderAnnotation[];
+  book: ReaderBook;
+  epub: GeneratedEpub | null;
   isLoading: boolean;
 }) {
-  const [index, setIndex] = useState(0);
-  const annotation = annotations[index] || null;
+  const [pageIndex, setPageIndex] = useState(0);
+  const [turnDirection, setTurnDirection] = useState<"idle" | "forward" | "back">("idle");
+  const previewState = useMemo(() => {
+    if (!epub) {
+      return { preview: null, error: null };
+    }
+    try {
+      return { preview: parseGeneratedEpubPreview(epub), error: null };
+    } catch (error) {
+      return {
+        preview: null,
+        error: error instanceof Error ? error.message : "Could not render this EPUB preview.",
+      };
+    }
+  }, [epub]);
+
+  const preview = previewState.preview;
+  const pageCount = preview?.pages.length || 0;
+  const activePage = preview?.pages[pageIndex] || null;
 
   useEffect(() => {
-    setIndex(0);
-  }, [annotations]);
+    setPageIndex(0);
+    setTurnDirection("idle");
+  }, [book.id, epub]);
+
+  useEffect(() => {
+    if (!preview || pageCount <= 1) {
+      return undefined;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") {
+        return;
+      }
+      event.preventDefault();
+      const nextIndex =
+        event.key === "ArrowRight"
+          ? Math.min(pageCount - 1, pageIndex + 1)
+          : Math.max(0, pageIndex - 1);
+      if (nextIndex !== pageIndex) {
+        setTurnDirection(nextIndex > pageIndex ? "forward" : "back");
+        setPageIndex(nextIndex);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [pageCount, pageIndex, preview]);
+
+  function turnTo(nextIndex: number) {
+    if (nextIndex === pageIndex || nextIndex < 0 || nextIndex >= pageCount) {
+      return;
+    }
+    setTurnDirection(nextIndex > pageIndex ? "forward" : "back");
+    setPageIndex(nextIndex);
+  }
 
   if (isLoading) {
     return (
-      <div className="annotation-loading">
+      <div className="epub-reader-empty">
         <Loader2 className="spin" size={22} aria-hidden="true" />
-        <span>Opening annotations.</span>
+        <span>Preparing EPUB preview.</span>
       </div>
     );
   }
 
-  if (!annotation) {
+  if (!preview || !activePage) {
     return (
-      <div className="annotation-loading">
-        <Quote size={22} aria-hidden="true" />
-        <span>No annotations found for this book.</span>
+      <div className="epub-reader-empty">
+        <BookOpen size={22} aria-hidden="true" />
+        <span>{previewState.error || "Could not render this EPUB preview."}</span>
       </div>
     );
   }
 
   return (
-    <div className="annotation-reader">
-      <div className="annotation-toolbar">
-        <span>
-          {index + 1} of {annotations.length}
-        </span>
-        <div className="annotation-controls">
+    <div className="epub-reader" data-turn={turnDirection}>
+      <div className="epub-toolbar">
+        <div className="epub-page-status">
+          <span>
+            Page {pageIndex + 1} of {pageCount}
+          </span>
+          <strong>{activePage.title}</strong>
+        </div>
+        <div className="epub-controls">
           <button
             className="icon-button"
             type="button"
-            aria-label="Previous annotation"
-            onClick={() => setIndex(Math.max(0, index - 1))}
-            disabled={index === 0}
+            aria-label="Previous EPUB page"
+            onClick={() => turnTo(pageIndex - 1)}
+            disabled={pageIndex === 0}
           >
             <ChevronLeft size={20} aria-hidden="true" />
           </button>
           <button
             className="icon-button"
             type="button"
-            aria-label="Next annotation"
-            onClick={() => setIndex(Math.min(annotations.length - 1, index + 1))}
-            disabled={index >= annotations.length - 1}
+            aria-label="Next EPUB page"
+            onClick={() => turnTo(pageIndex + 1)}
+            disabled={pageIndex >= pageCount - 1}
           >
             <ChevronRight size={20} aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      <article className="annotation-page">
-        <div className="annotation-meta">
-          <span>{annotation.location.chapter}</span>
-          <span>{formatProgress(annotation.location.progress)}</span>
-        </div>
-        {annotation.text ? (
-          <blockquote style={{ borderColor: annotation.colorHex || undefined }}>
-            {annotation.text}
-          </blockquote>
-        ) : null}
-        {annotation.note ? (
-          <div className="reader-note">
-            <span>Note</span>
-            <p>{annotation.note}</p>
-          </div>
-        ) : null}
-      </article>
+      <div className="book-stage" aria-label={`${preview.title} EPUB preview`}>
+        <div className="book-spine" aria-hidden="true" />
+        <article
+          className="epub-page-sheet"
+          key={activePage.id}
+          role="document"
+          aria-label={`${activePage.title}, page ${pageIndex + 1} of ${pageCount}`}
+        >
+          <div
+            className="epub-page-content"
+            data-kind={activePage.kind}
+            dangerouslySetInnerHTML={{ __html: activePage.bodyHtml }}
+          />
+        </article>
+      </div>
     </div>
   );
 }
@@ -538,13 +591,6 @@ function Metric({ label, value }: { label: string; value: number }) {
 
 function isReaderBusy(phase: string) {
   return phase === "connecting" || phase === "cataloging";
-}
-
-function formatProgress(progress: number) {
-  if (!Number.isFinite(progress) || progress <= 0) {
-    return "Saved passage";
-  }
-  return `${Math.round(progress * 100)}% through chapter`;
 }
 
 function sum(books: readonly ReaderBook[], selector: (book: ReaderBook) => number) {

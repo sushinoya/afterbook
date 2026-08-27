@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from sys import path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 path.insert(0, str(ROOT))
 
 from afterbook.api import generate_kobo_epub, list_kobo_books  # noqa: E402
