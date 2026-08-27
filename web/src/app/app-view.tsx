@@ -44,7 +44,7 @@ export function AppView() {
             A
           </div>
           <div>
-            <h1>Afterbook</h1>
+            <h1>AfterBook</h1>
             <p>Your highlights, gathered quietly.</p>
           </div>
         </div>
@@ -83,12 +83,11 @@ function WelcomeScreen({ onStart }: { onStart(): void }) {
   return (
     <main className="welcome-screen">
       <section className="welcome-copy" aria-labelledby="welcome-title">
-        <p className="eyebrow">Afterbook</p>
-        <h1 id="welcome-title">Bring your highlights home.</h1>
+        <p className="eyebrow">Private reader companion</p>
+        <h1 id="welcome-title">AfterBook.</h1>
         <p className="welcome-lede">
-          A calm space for gathering the notes and passages you saved while reading.
-          Connect your reader, review your annotated books, then export a lasting EPUB
-          when you are ready.
+          A quieter home for the passages you kept. Connect your reader, gather
+          your annotated books, and turn your highlights into a lasting EPUB.
         </p>
         <div className="welcome-actions">
           <button className="primary-button large" type="button" onClick={onStart}>
@@ -98,21 +97,6 @@ function WelcomeScreen({ onStart }: { onStart(): void }) {
           <div className="privacy-note">
             <Lock size={16} aria-hidden="true" />
             Local and read-only
-          </div>
-        </div>
-      </section>
-
-      <section className="reading-room" aria-label="Reading room preview">
-        <div className="window-pane" aria-hidden="true" />
-        <div className="desk">
-          <div className="open-book">
-            <span />
-            <span />
-          </div>
-          <div className="book-stack">
-            <span />
-            <span />
-            <span />
           </div>
         </div>
       </section>

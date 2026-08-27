@@ -77,7 +77,7 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   } satisfies BrowserHarness);
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Bring your highlights home." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AfterBook." })).toBeVisible();
   await page.getByRole("button", { name: "Get started" }).click();
   await expect(page.getByRole("heading", { name: "Connect your device" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Annotated books" })).toBeHidden();

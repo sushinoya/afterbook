@@ -59,16 +59,38 @@ button:disabled {
 .welcome-screen {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(320px, 0.95fr) minmax(320px, 1.05fr);
-  align-items: stretch;
+  align-items: center;
+  padding: clamp(24px, 5vw, 72px);
+  background:
+    linear-gradient(180deg, rgb(255 253 248 / 0.86), rgb(244 245 240 / 0.96)),
+    radial-gradient(circle at 16% 14%, rgb(181 133 46 / 0.12), transparent 32%),
+    var(--canvas);
 }
 
 .welcome-copy {
   min-width: 0;
+  width: min(1160px, 100%);
+  margin: 0 auto;
   display: grid;
   align-content: center;
-  gap: 22px;
-  padding: clamp(32px, 8vw, 96px);
+  gap: clamp(18px, 3vw, 30px);
+  padding: clamp(18px, 4vw, 48px) 0;
+}
+
+.welcome-copy::before,
+.welcome-copy::after {
+  content: "";
+  display: block;
+  width: min(420px, 62vw);
+  height: 1px;
+  background: linear-gradient(90deg, var(--ink), transparent);
+  opacity: 0.2;
+}
+
+.welcome-copy::after {
+  width: min(280px, 46vw);
+  background: linear-gradient(90deg, var(--gold), transparent);
+  opacity: 0.42;
 }
 
 .eyebrow {
@@ -81,22 +103,23 @@ button:disabled {
 }
 
 .welcome-copy h1 {
-  max-width: 720px;
   margin: 0;
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(38px, 5.8vw, 72px);
-  font-weight: 700;
+  font-family:
+    "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  font-size: clamp(68px, 15vw, 188px);
+  font-weight: 800;
   letter-spacing: 0;
-  line-height: 1.04;
+  line-height: 0.86;
+  text-wrap: balance;
 }
 
 .welcome-lede {
-  max-width: 680px;
+  max-width: 760px;
   margin: 0;
   color: #3c443b;
-  font-size: clamp(17px, 2vw, 21px);
-  line-height: 1.65;
+  font-size: clamp(18px, 2.2vw, 25px);
+  line-height: 1.55;
 }
 
 .welcome-actions {
@@ -114,113 +137,6 @@ button:disabled {
   color: var(--muted);
   font-size: 14px;
   font-weight: 700;
-}
-
-.reading-room {
-  position: relative;
-  min-height: 520px;
-  overflow: hidden;
-  background:
-    linear-gradient(90deg, rgb(29 33 28 / 0.18), transparent 34%),
-    linear-gradient(180deg, #d7e7ea 0 46%, #e8dfd1 46% 72%, #4e3932 72%);
-}
-
-.window-pane {
-  position: absolute;
-  top: 9%;
-  right: 13%;
-  width: min(58%, 460px);
-  aspect-ratio: 0.82;
-  border: 18px solid #fbf7ee;
-  border-radius: 8px;
-  background:
-    linear-gradient(90deg, transparent 48%, rgb(255 255 255 / 0.7) 48% 52%, transparent 52%),
-    linear-gradient(180deg, transparent 48%, rgb(255 255 255 / 0.7) 48% 52%, transparent 52%),
-    linear-gradient(145deg, #bdd9de, #f8dfbd 70%);
-  box-shadow: 0 24px 70px rgb(30 42 40 / 0.22);
-}
-
-.desk {
-  position: absolute;
-  right: 8%;
-  bottom: 12%;
-  width: min(76%, 560px);
-  height: 220px;
-}
-
-.desk::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 18px;
-  height: 34px;
-  border-radius: 8px;
-  background: #5f4136;
-  box-shadow: 0 24px 42px rgb(35 24 20 / 0.28);
-}
-
-.open-book {
-  position: absolute;
-  left: 6%;
-  right: 25%;
-  bottom: 48px;
-  height: 124px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  z-index: 1;
-}
-
-.open-book span {
-  border: 1px solid #ded0bc;
-  background:
-    repeating-linear-gradient(180deg, transparent 0 12px, rgb(90 78 61 / 0.12) 13px 14px),
-    var(--paper);
-}
-
-.open-book span:first-child {
-  border-radius: 10px 4px 4px 10px;
-  transform: skewY(3deg);
-  transform-origin: right bottom;
-}
-
-.open-book span:last-child {
-  border-radius: 4px 10px 10px 4px;
-  transform: skewY(-3deg);
-  transform-origin: left bottom;
-}
-
-.book-stack {
-  position: absolute;
-  right: 3%;
-  bottom: 52px;
-  width: 150px;
-  display: grid;
-  gap: 8px;
-  z-index: 1;
-}
-
-.book-stack span {
-  height: 22px;
-  border-radius: 5px;
-  box-shadow: 0 3px 0 rgb(0 0 0 / 0.08);
-}
-
-.book-stack span:nth-child(1) {
-  width: 118px;
-  justify-self: end;
-  background: var(--plum);
-}
-
-.book-stack span:nth-child(2) {
-  width: 150px;
-  background: var(--blue);
-}
-
-.book-stack span:nth-child(3) {
-  width: 132px;
-  justify-self: end;
-  background: var(--gold);
 }
 
 .reader-app {
@@ -1020,14 +936,6 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
-  .welcome-screen {
-    grid-template-columns: 1fr;
-  }
-
-  .reading-room {
-    min-height: 360px;
-  }
-
   .topbar {
     position: static;
     align-items: flex-start;
@@ -1079,6 +987,11 @@ button:disabled {
 @media (max-width: 560px) {
   .welcome-copy {
     padding: 28px 18px;
+  }
+
+  .welcome-copy h1 {
+    font-size: clamp(52px, 13.6vw, 66px);
+    line-height: 0.92;
   }
 
   .reader-workspace {
