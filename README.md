@@ -114,10 +114,11 @@ afterbook --source /Volumes/KOBOeReader export
 
 ## Browser app
 
-AfterBook also has a static browser app in [`web`](web). It uses the File System
-Access API, so it requires a Chromium-based desktop browser such as Chrome or
-Edge. You explicitly choose the mounted `KOBOeReader` drive, and AfterBook asks
-for read-only access.
+AfterBook also has a static browser app in [`web`](web); see
+[`docs/browser-app.md`](docs/browser-app.md) for architecture notes. It uses the
+File System Access API, so it requires a Chromium-based desktop browser such as
+Chrome or Edge. You explicitly choose the mounted `KOBOeReader` drive, and
+AfterBook asks for read-only access.
 
 The browser app has no backend and no accounts. Kobo data stays in the browser:
 JavaScript copies the Kobo database snapshot and selected cached cover into a
