@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
 
+import { DIRECTORY_PICKER_OPTIONS } from "../../src/infrastructure/file-system/local-files.js";
+import { WORKER_REQUESTS } from "../../src/infrastructure/worker/protocol.js";
+
 const WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const PYTHON = resolvePython();
 
@@ -27,8 +30,12 @@ type PickerOptions = { id: string; mode: "read" };
 type ReadPermissionDescriptor = { mode: "read" };
 
 type LoggedWorkerMessage =
-  | { type: "loadSnapshot"; paths: string[] }
-  | { type: "exportBook"; bookId: string; coverPath: string | null };
+  | { type: typeof WORKER_REQUESTS.catalogAnnotations; paths: string[] }
+  | {
+      type: typeof WORKER_REQUESTS.generateAnnotationEpub;
+      bookId: string;
+      coverPath: string | null;
+    };
 
 interface AfterbookEvents {
   pickerOptions: PickerOptions | null;
@@ -46,6 +53,11 @@ interface WorkerRequestLogMessage {
   payload?: WorkerRequestLogPayload;
 }
 
+interface BrowserHarness {
+  fixture: BrowserFixture;
+  workerRequests: typeof WORKER_REQUESTS;
+}
+
 declare global {
   interface Window {
     __afterbookEvents: AfterbookEvents;
@@ -59,21 +71,25 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   const firstCoverPath = firstBook?.cover.priority_candidates[0];
   assert.ok(firstCoverPath);
   test.setTimeout(120_000);
-  await page.addInitScript(installFakeKoboDirectory, fixture);
+  await page.addInitScript(installFakeKoboDirectory, {
+    fixture,
+    workerRequests: WORKER_REQUESTS,
+  } satisfies BrowserHarness);
 
   await page.goto("/");
-  await expect(page.getByText(/All Kobo reading data stays local/)).toBeVisible();
+  await expect(page.getByText("Reader management console")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Annotation Export" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Connect Kobo" }).click();
+  await page.getByRole("button", { name: "Connect Reader" }).click();
 
-  await expect(page.getByRole("cell", { name: "Browser Fixture - Test Author" })).toBeVisible({
+  await expect(page.getByRole("cell", { name: "Browser Fixture Test Author" })).toBeVisible({
     timeout: 60_000,
   });
   await expect(page.getByAltText("Browser Fixture cover")).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText("1 book found.")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("1 title ready.")).toBeVisible({ timeout: 60_000 });
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Create clipping book" }).click();
+  await page.getByRole("button", { name: "Export EPUB" }).click();
   const download = await downloadPromise;
 
   assert.equal(download.suggestedFilename(), fixture.export.filename);
@@ -82,10 +98,10 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   assertValidEpub(downloadPath);
 
   const events = await page.evaluate<AfterbookEvents>(() => window.__afterbookEvents);
-  assert.deepEqual(events.pickerOptions, { id: "afterbook-kobo", mode: "read" });
+  assert.deepEqual(events.pickerOptions, DIRECTORY_PICKER_OPTIONS);
   const loadMessage = events.workerMessages[0];
   assert.ok(loadMessage);
-  assert.equal(loadMessage.type, "loadSnapshot");
+  assert.equal(loadMessage.type, WORKER_REQUESTS.catalogAnnotations);
   assert.deepEqual(loadMessage.paths, [
     ".kobo/KoboReader.sqlite",
     ".kobo/KoboReader.sqlite-wal",
@@ -93,7 +109,7 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   ]);
   const exportMessage = events.workerMessages[1];
   assert.ok(exportMessage);
-  assert.equal(exportMessage.type, "exportBook");
+  assert.equal(exportMessage.type, WORKER_REQUESTS.generateAnnotationEpub);
   assert.equal(exportMessage.bookId, "browser-fixture-book");
   assert.equal(exportMessage.coverPath, firstCoverPath);
 });
@@ -108,8 +124,10 @@ test("explains when the File System Access API is unavailable", async ({ page })
 
   await page.goto("/");
 
+  await expect(page.getByRole("status")).toHaveText("No reader connected.");
+  await page.getByRole("button", { name: "Connect Reader" }).click();
   await expect(page.getByRole("status")).toHaveText(
-    "Chrome or Edge on desktop is required to connect to a Kobo drive.",
+    "Chrome or Edge on desktop is required for local reader access.",
   );
 });
 
@@ -129,11 +147,9 @@ test("handles denied read permission", async ({ page }) => {
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Connect Kobo" }).click();
+  await page.getByRole("button", { name: "Connect Reader" }).click();
 
-  await expect(page.getByRole("status")).toHaveText(
-    "Afterbook can only continue after you grant read access to the Kobo drive.",
-  );
+  await expect(page.getByRole("status")).toHaveText("Afterbook needs read access to continue.");
 });
 
 test("handles a selected folder without the Kobo database", async ({ page }) => {
@@ -149,11 +165,9 @@ test("handles a selected folder without the Kobo database", async ({ page }) => 
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Connect Kobo" }).click();
+  await page.getByRole("button", { name: "Connect Reader" }).click();
 
-  await expect(page.getByRole("status")).toHaveText(
-    "That folder does not contain .kobo/KoboReader.sqlite. Choose KOBOeReader.",
-  );
+  await expect(page.getByRole("status")).toHaveText("Selected source is not a supported reader.");
 });
 
 function buildFixture(): BrowserFixture {
@@ -218,7 +232,7 @@ print("valid")
   assert.equal(output.trim(), "valid");
 }
 
-function installFakeKoboDirectory(fixture: BrowserFixture) {
+function installFakeKoboDirectory({ fixture, workerRequests }: BrowserHarness) {
   type FakeHandle = FakeFileHandle | FakeDirectoryHandle;
 
   class FakeFileHandle {
@@ -333,15 +347,15 @@ function installFakeKoboDirectory(fixture: BrowserFixture) {
     postMessage(message: unknown, transfer?: Transferable[]) {
       const loggedMessage = message as WorkerRequestLogMessage;
       const payload = loggedMessage.payload || {};
-      if (loggedMessage.type === "loadSnapshot" && Array.isArray(payload.files)) {
+      if (loggedMessage.type === workerRequests.catalogAnnotations && Array.isArray(payload.files)) {
         window.__afterbookEvents.workerMessages.push({
-          type: "loadSnapshot",
+          type: workerRequests.catalogAnnotations,
           paths: payload.files.map((file) => file.path),
         });
       }
-      if (loggedMessage.type === "exportBook") {
+      if (loggedMessage.type === workerRequests.generateAnnotationEpub) {
         window.__afterbookEvents.workerMessages.push({
-          type: "exportBook",
+          type: workerRequests.generateAnnotationEpub,
           bookId: payload.bookId || "",
           coverPath: payload.coverFile?.path || null,
         });
