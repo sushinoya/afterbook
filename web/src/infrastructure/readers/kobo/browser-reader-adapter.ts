@@ -1,5 +1,6 @@
 import {
   type AnnotationExportCapability,
+  type ReaderAnnotation,
   type ReaderBook,
   type ReaderConnection,
 } from "../../../domain/readers.js";
@@ -21,6 +22,7 @@ import {
   KOBO_DATABASE_PATH,
   KOBO_DATABASE_SIDECAR_PATHS,
   KOBO_READER_ID,
+  type KoboAnnotationRecord,
   type KoboBookRecord,
   type KoboCoverLocator,
 } from "./types.js";
@@ -69,6 +71,14 @@ class KoboAnnotationExportCapability implements AnnotationExportCapability {
 
   async findCover(book: ReaderBook): Promise<LocalFile | null> {
     return findCachedCover(this.directoryHandle, book.coverHint);
+  }
+
+  async listAnnotations(book: ReaderBook): Promise<ReaderAnnotation[]> {
+    const payload = await this.workerClient.listBookAnnotations({
+      readerId: KOBO_READER_ID,
+      bookId: book.source.id,
+    });
+    return parseKoboAnnotations(payload.annotations).map(koboAnnotationToReaderAnnotation);
   }
 
   async exportBook(book: ReaderBook, coverFile: LocalFile | null) {
@@ -155,8 +165,34 @@ function koboBookToReaderBook(book: KoboBookRecord): ReaderBook {
   };
 }
 
+function koboAnnotationToReaderAnnotation(
+  annotation: KoboAnnotationRecord,
+  index: number,
+): ReaderAnnotation {
+  return {
+    id: annotation.source_id || `${KOBO_READER_ID}:annotation:${index}`,
+    text: annotation.text,
+    note: annotation.note,
+    colorName: annotation.color_name,
+    colorHex: annotation.color_hex,
+    kind: annotation.kind,
+    createdAt: annotation.created_at,
+    modifiedAt: annotation.modified_at,
+    location: {
+      chapter: annotation.location.chapter,
+      progress: annotation.location.progress,
+      locator: annotation.location.locator,
+      page: annotation.location.page,
+    },
+  };
+}
+
 function parseKoboBooks(value: unknown): KoboBookRecord[] {
   return Array.isArray(value) ? value.filter(isKoboBookRecord) : [];
+}
+
+function parseKoboAnnotations(value: unknown): KoboAnnotationRecord[] {
+  return Array.isArray(value) ? value.filter(isKoboAnnotationRecord) : [];
 }
 
 function isKoboBookRecord(value: unknown): value is KoboBookRecord {
@@ -172,6 +208,41 @@ function isKoboBookRecord(value: unknown): value is KoboBookRecord {
     typeof book.highlight_count === "number" &&
     typeof book.note_count === "number" &&
     (book.cover === null || isKoboCoverLocator(book.cover))
+  );
+}
+
+function isKoboAnnotationRecord(value: unknown): value is KoboAnnotationRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const annotation = value as Partial<KoboAnnotationRecord>;
+  return (
+    (typeof annotation.source_id === "string" || annotation.source_id === null) &&
+    typeof annotation.text === "string" &&
+    typeof annotation.note === "string" &&
+    (typeof annotation.color_name === "string" || annotation.color_name === null) &&
+    (typeof annotation.color_hex === "string" || annotation.color_hex === null) &&
+    (typeof annotation.kind === "string" || annotation.kind === null) &&
+    (typeof annotation.created_at === "string" || annotation.created_at === null) &&
+    (typeof annotation.modified_at === "string" || annotation.modified_at === null) &&
+    isKoboAnnotationLocation(annotation.location)
+  );
+}
+
+function isKoboAnnotationLocation(
+  value: unknown,
+): value is KoboAnnotationRecord["location"] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const location = value as Partial<KoboAnnotationRecord["location"]>;
+  return (
+    typeof location.chapter === "string" &&
+    typeof location.progress === "number" &&
+    (typeof location.locator === "string" || location.locator === null) &&
+    (typeof location.page === "string" ||
+      typeof location.page === "number" ||
+      location.page === null)
   );
 }
 

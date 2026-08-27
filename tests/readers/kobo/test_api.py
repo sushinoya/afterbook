@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from afterbook.api import generate_kobo_epub, list_kobo_books, validate_kobo_directory
+from afterbook.api import (
+    generate_kobo_epub,
+    list_kobo_book_annotations,
+    list_kobo_books,
+    validate_kobo_directory,
+)
 from afterbook.errors import AfterBookError
 from afterbook.readers.kobo.cover import (
     COVER_VARIANT_PRIORITY,
@@ -49,6 +54,24 @@ def test_list_kobo_books_returns_browser_mappings(kobo_root: Path) -> None:
     assert books[0]["note_count"] == 1
     assert books[0]["source_id"] == "da59e6e5-b10a-409a-b476-94fa8c654816"
     assert books[0]["cover"] == cover_cache_locator("image-1")
+
+
+def test_list_kobo_book_annotations_returns_browser_mappings(kobo_root: Path) -> None:
+    annotations = list_kobo_book_annotations(kobo_root, "da59e6e5-b10a-409a-b476-94fa8c654816")
+
+    assert annotations[0]["source_id"] == "bookmark-yellow"
+    assert annotations[0]["text"] == "A yellow passage from chapter one."
+    assert annotations[0]["note"] == ""
+    assert annotations[0]["color_name"] == "yellow"
+    assert annotations[0]["color_hex"] == "#F8E98A"
+    assert annotations[0]["location"] == {
+        "chapter": "The First Chapter",
+        "progress": 0.8,
+        "locator": "da59e6e5-b10a-409a-b476-94fa8c654816/chapter-1.xhtml#kobo.1.1",
+        "page": None,
+    }
+    assert annotations[1]["text"] == "A pink passage."
+    assert any(annotation["note"] == "This is my note." for annotation in annotations)
 
 
 def test_generate_kobo_epub_returns_filename_and_bytes(kobo_root: Path) -> None:

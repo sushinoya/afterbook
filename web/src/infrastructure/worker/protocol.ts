@@ -5,6 +5,7 @@ export const AFTERBOOK_WORKER_NAME = "afterbook-annotation-engine";
 
 export const WORKER_REQUESTS = {
   catalogAnnotations: "annotationExport.catalog",
+  listBookAnnotations: "annotationExport.listBookAnnotations",
   generateAnnotationEpub: "annotationExport.generateEpub",
 } as const;
 
@@ -20,6 +21,15 @@ export interface CatalogAnnotationsInput {
 
 export interface CatalogAnnotationsOutput {
   books: unknown[];
+}
+
+export interface ListBookAnnotationsInput {
+  readerId: ReaderId;
+  bookId: string;
+}
+
+export interface ListBookAnnotationsOutput {
+  annotations: unknown[];
 }
 
 export interface GenerateAnnotationEpubInput {

@@ -3,6 +3,8 @@ import type {
   CatalogAnnotationsOutput,
   GenerateAnnotationEpubInput,
   GenerateAnnotationEpubOutput,
+  ListBookAnnotationsInput,
+  ListBookAnnotationsOutput,
   WorkerRequest,
   WorkerRequestType,
   WorkerResponse,
@@ -17,6 +19,7 @@ import PyodideWorker from "./pyodide.worker.ts?worker";
 
 export interface AfterbookWorkerClient {
   catalogAnnotations(input: CatalogAnnotationsInput): Promise<CatalogAnnotationsOutput>;
+  listBookAnnotations(input: ListBookAnnotationsInput): Promise<ListBookAnnotationsOutput>;
   generateAnnotationEpub(input: GenerateAnnotationEpubInput): Promise<GenerateAnnotationEpubOutput>;
   terminate(): void;
 }
@@ -136,6 +139,13 @@ export function createAfterbookWorkerClient(
         WORKER_REQUESTS.catalogAnnotations,
         input,
         transferableFiles(input.files),
+      );
+    },
+    listBookAnnotations(input) {
+      return request<ListBookAnnotationsOutput>(
+        WORKER_REQUESTS.listBookAnnotations,
+        input,
+        [],
       );
     },
     generateAnnotationEpub(input) {

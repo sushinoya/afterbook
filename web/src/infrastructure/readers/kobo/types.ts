@@ -21,3 +21,20 @@ export interface KoboBookRecord {
   note_count: number;
   cover: KoboCoverLocator | null;
 }
+
+export interface KoboAnnotationRecord {
+  source_id: string | null;
+  text: string;
+  note: string;
+  color_name: string | null;
+  color_hex: string | null;
+  kind: string | null;
+  created_at: string | null;
+  modified_at: string | null;
+  location: {
+    chapter: string;
+    progress: number;
+    locator: string | null;
+    page: string | number | null;
+  };
+}

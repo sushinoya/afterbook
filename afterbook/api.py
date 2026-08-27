@@ -8,7 +8,7 @@ from typing import TypedDict
 
 from afterbook.epub import epub_bytes, epub_filename
 from afterbook.errors import AfterBookError
-from afterbook.models import Book
+from afterbook.models import Annotation, Book
 from afterbook.readers.kobo import open_kobo_reader
 from afterbook.readers.kobo.cover import CoverCacheLocator
 from afterbook.readers.kobo.device import DATABASE_RELATIVE_PATH
@@ -25,6 +25,29 @@ class KoboBookMapping(TypedDict):
     highlight_count: int
     note_count: int
     cover: CoverCacheLocator | None
+
+
+class KoboAnnotationLocationMapping(TypedDict):
+    """JSON-compatible annotation location returned to browser callers."""
+
+    chapter: str
+    progress: float
+    locator: str | None
+    page: str | int | None
+
+
+class KoboAnnotationMapping(TypedDict):
+    """JSON-compatible annotation details returned to browser callers."""
+
+    source_id: str | None
+    text: str
+    note: str
+    color_name: str | None
+    color_hex: str | None
+    kind: str | None
+    created_at: str | None
+    modified_at: str | None
+    location: KoboAnnotationLocationMapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +84,26 @@ def book_to_mapping(
     }
 
 
+def annotation_to_mapping(annotation: Annotation) -> KoboAnnotationMapping:
+    """Return a JSON-compatible browser view of an annotation."""
+    return {
+        "source_id": annotation.source_id,
+        "text": annotation.text,
+        "note": annotation.note,
+        "color_name": annotation.color_name,
+        "color_hex": annotation.color_hex,
+        "kind": annotation.kind,
+        "created_at": annotation.created_at,
+        "modified_at": annotation.modified_at,
+        "location": {
+            "chapter": annotation.location.chapter,
+            "progress": annotation.location.progress,
+            "locator": annotation.location.locator,
+            "page": annotation.location.page,
+        },
+    }
+
+
 def list_kobo_books(source_path: str | Path) -> list[KoboBookMapping]:
     """List Kobo books with highlights or notes from a staged Kobo root."""
     root = validate_kobo_directory(source_path)
@@ -73,6 +116,17 @@ def list_kobo_books(source_path: str | Path) -> list[KoboBookMapping]:
             )
             for book in books
         ]
+
+
+def list_kobo_book_annotations(
+    source_path: str | Path,
+    book_source_id: str,
+) -> list[KoboAnnotationMapping]:
+    """List normalized Kobo annotations for one book from a staged Kobo root."""
+    root = validate_kobo_directory(source_path)
+    with open_kobo_reader(root) as reader:
+        book = book_by_id(reader.list_books(), book_source_id)
+        return [annotation_to_mapping(annotation) for annotation in reader.export_for(book).annotations]
 
 
 def generate_kobo_epub(source_path: str | Path, book_source_id: str) -> GeneratedEpub:
