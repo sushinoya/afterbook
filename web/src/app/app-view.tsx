@@ -1,231 +1,528 @@
 import {
+  BookOpen,
   BookOpenCheck,
-  CheckCircle2,
-  Database,
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Download,
+  FolderOpen,
   HardDrive,
+  LibraryBig,
   Loader2,
+  Lock,
   PlugZap,
+  Quote,
   ShieldCheck,
+  X,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { ReaderBook, ReaderDefinition } from "../domain/readers.js";
-import { useAnnotationExport } from "../features/annotation-export/use-annotation-export.js";
+import type { ReaderAnnotation, ReaderBook, ReaderDefinition } from "../domain/readers.js";
+import {
+  type AnnotationExportViewModel,
+  useAnnotationExport,
+} from "../features/annotation-export/use-annotation-export.js";
 import { createReaderRegistry } from "../infrastructure/readers/reader-registry.js";
 
 export function AppView() {
   const readers = useMemo(() => createReaderRegistry(), []);
   const model = useAnnotationExport(readers);
+  const [hasStarted, setHasStarted] = useState(false);
   const selectedReader =
     readers.find((reader) => reader.id === model.selectedReaderId) || readers[0];
+  const isConnected = Boolean(model.connection);
+
+  if (!hasStarted) {
+    return <WelcomeScreen onStart={() => setHasStarted(true)} />;
+  }
 
   return (
-    <div className="app-frame">
-      <aside className="sidebar" aria-label="Afterbook navigation">
+    <div className="reader-app">
+      <header className="topbar">
         <div className="brand-lockup">
           <div className="brand-mark" aria-hidden="true">
             A
           </div>
           <div>
             <h1>Afterbook</h1>
-            <p>Reader management console</p>
+            <p>Your highlights, gathered quietly.</p>
           </div>
         </div>
+        <StatusIndicator phase={model.phase} message={model.statusMessage} />
+      </header>
 
-        <nav className="primary-nav" aria-label="Primary">
-          <a className="nav-item active" href="#annotation-export">
-            <BookOpenCheck size={18} aria-hidden="true" />
-            Annotation Export
-          </a>
-        </nav>
-      </aside>
+      <main className="reader-workspace" id="annotation-export">
+        {isConnected ? (
+          <ConnectedLibrary model={model} />
+        ) : (
+          <ConnectionWizard
+            model={model}
+            readers={readers}
+            selectedReader={selectedReader}
+          />
+        )}
+      </main>
 
-      <main className="workspace" id="annotation-export">
-        <header className="workspace-header">
-          <div>
-            <p className="eyebrow">Current Capability</p>
-            <h2>Annotation Export</h2>
+      {model.selectedBook ? (
+        <BookModal
+          book={model.selectedBook}
+          annotations={model.selectedAnnotations}
+          coverUrl={model.coverUrls.get(model.selectedBook.id)}
+          isLoading={model.isLoadingSelectedBook}
+          isExporting={model.phase === "exporting"}
+          isActiveExport={model.activeBookId === model.selectedBook.id}
+          onClose={model.closeBook}
+          onExport={model.exportBook}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function WelcomeScreen({ onStart }: { onStart(): void }) {
+  return (
+    <main className="welcome-screen">
+      <section className="welcome-copy" aria-labelledby="welcome-title">
+        <p className="eyebrow">Afterbook</p>
+        <h1 id="welcome-title">Bring your highlights home.</h1>
+        <p className="welcome-lede">
+          A calm space for gathering the notes and passages you saved while reading.
+          Connect your reader, review your annotated books, then export a lasting EPUB
+          when you are ready.
+        </p>
+        <div className="welcome-actions">
+          <button className="primary-button large" type="button" onClick={onStart}>
+            <BookOpen size={19} aria-hidden="true" />
+            Get started
+          </button>
+          <div className="privacy-note">
+            <Lock size={16} aria-hidden="true" />
+            Local and read-only
           </div>
-          <div className="status-pill" data-phase={model.phase} role="status" aria-live="polite">
-            {model.phase === "connecting" || model.phase === "cataloging" || model.phase === "exporting" ? (
-              <Loader2 className="spin" size={16} aria-hidden="true" />
-            ) : (
-              <CheckCircle2 size={16} aria-hidden="true" />
-            )}
-            {model.statusMessage}
-          </div>
-        </header>
+        </div>
+      </section>
 
-        <section className="connection-panel" aria-label="Reader source">
-          <div className="reader-selector">
-            <div className="section-label">Reader Source</div>
-            <ReaderOptions
-              readers={readers}
-              selectedReaderId={model.selectedReaderId}
-              onSelect={model.selectReader}
-            />
+      <section className="reading-room" aria-label="Reading room preview">
+        <div className="window-pane" aria-hidden="true" />
+        <div className="desk">
+          <div className="open-book">
+            <span />
+            <span />
           </div>
-
-          <div className="connection-summary">
-            <div className="summary-row">
-              <HardDrive size={18} aria-hidden="true" />
-              <span>{model.connection?.label || selectedReader?.connectionLabel}</span>
-            </div>
-            <div className="summary-row">
-              <ShieldCheck size={18} aria-hidden="true" />
-              <span>Read-only access</span>
-            </div>
+          <div className="book-stack">
+            <span />
+            <span />
+            <span />
           </div>
+        </div>
+      </section>
+    </main>
+  );
+}
 
+function StatusIndicator({ phase, message }: { phase: string; message: string }) {
+  const busy =
+    phase === "connecting" ||
+    phase === "cataloging" ||
+    phase === "opening-book" ||
+    phase === "exporting";
+  return (
+    <div className="status-pill" data-phase={phase} role="status" aria-live="polite">
+      {busy ? (
+        <Loader2 className="spin" size={16} aria-hidden="true" />
+      ) : (
+        <Check size={16} aria-hidden="true" />
+      )}
+      {message}
+    </div>
+  );
+}
+
+function ConnectionWizard({
+  model,
+  readers,
+  selectedReader,
+}: {
+  model: AnnotationExportViewModel;
+  readers: readonly ReaderDefinition[];
+  selectedReader: ReaderDefinition | undefined;
+}) {
+  const [step, setStep] = useState(0);
+  const busy = isReaderBusy(model.phase);
+  const currentStep = CONNECTION_STEPS[step] || CONNECTION_STEPS[0];
+
+  return (
+    <section className="connection-wizard" aria-labelledby="setup-title">
+      <div className="wizard-progress" aria-label="Connection progress">
+        {CONNECTION_STEPS.map((connectionStep, index) => (
+          <span
+            key={connectionStep.title}
+            data-state={index < step ? "done" : index === step ? "active" : "idle"}
+          />
+        ))}
+      </div>
+
+      <div className="wizard-page">
+        <div className="wizard-icon" aria-hidden="true">
+          {currentStep.icon}
+        </div>
+        <p className="eyebrow">
+          Step {step + 1} of {CONNECTION_STEPS.length}
+        </p>
+        <h2 id="setup-title">{currentStep.title}</h2>
+        <p>{currentStep.description}</p>
+      </div>
+
+      {step === 1 ? (
+        <div className="reader-picker" aria-label="Reader source">
+          {readers.map((reader) => (
+            <button
+              className="reader-chip"
+              data-selected={reader.id === model.selectedReaderId}
+              type="button"
+              key={reader.id}
+              onClick={() => model.selectReader(reader.id)}
+            >
+              <BookOpenCheck size={16} aria-hidden="true" />
+              <span>{reader.name}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="wizard-actions">
+        {step === 1 ? (
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => setStep(0)}
+            disabled={busy}
+          >
+            Back
+          </button>
+        ) : null}
+        <div className="connection-detail">
+          <ShieldCheck size={17} aria-hidden="true" />
+          <span>{model.connection?.label || selectedReader?.connectionLabel}</span>
+        </div>
+        {step === 0 ? (
+          <button className="primary-button" type="button" onClick={() => setStep(1)}>
+            Continue
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        ) : (
           <button
             className="primary-button"
             type="button"
             onClick={model.connectReader}
-            disabled={isBusy(model.phase)}
+            disabled={busy}
           >
-            {isBusy(model.phase) ? (
+            {busy ? (
               <Loader2 className="spin" size={18} aria-hidden="true" />
             ) : (
               <PlugZap size={18} aria-hidden="true" />
             )}
             Connect Reader
           </button>
-        </section>
-
-        <section className="content-section" aria-label="Annotated books">
-          <div className="section-heading">
-            <div>
-              <div className="section-label">Catalog</div>
-              <h3>Annotated Books</h3>
-            </div>
-            <div className="metric-strip" aria-label="Catalog totals">
-              <Metric label="Titles" value={model.books.length} />
-              <Metric label="Highlights" value={sum(model.books, (book) => book.metrics.highlights)} />
-              <Metric label="Notes" value={sum(model.books, (book) => book.metrics.notes)} />
-            </div>
-          </div>
-
-          <BookTable
-            books={model.books}
-            coverUrls={model.coverUrls}
-            activeBookId={model.activeBookId}
-            isExporting={model.phase === "exporting"}
-            onExport={model.exportBook}
-          />
-        </section>
-      </main>
-    </div>
+        )}
+      </div>
+    </section>
   );
 }
 
-function ReaderOptions({
-  readers,
-  selectedReaderId,
-  onSelect,
-}: {
-  readers: readonly ReaderDefinition[];
-  selectedReaderId: ReaderDefinition["id"];
-  onSelect(readerId: ReaderDefinition["id"]): void;
-}) {
+const CONNECTION_STEPS = [
+  {
+    title: "Connect your device",
+    description:
+      "Plug in your e-reader and choose file transfer or mount mode if the device asks.",
+    icon: <HardDrive size={30} aria-hidden="true" />,
+  },
+  {
+    title: "Select the reader folder",
+    description:
+      "When the browser picker opens, choose the reader drive or mounted folder.",
+    icon: <FolderOpen size={30} aria-hidden="true" />,
+  },
+] as const;
+
+function ConnectedLibrary({ model }: { model: AnnotationExportViewModel }) {
   return (
-    <div className="reader-options">
-      {readers.map((reader) => (
+    <>
+      <section className="connected-banner" aria-labelledby="connected-title">
+        <div className="connected-icon" aria-hidden="true">
+          <Check size={24} />
+        </div>
+        <div>
+          <p className="eyebrow">Connected</p>
+          <h2 id="connected-title">{model.connection?.label || "Reader connected"}</h2>
+        </div>
         <button
-          className="reader-option"
-          data-selected={reader.id === selectedReaderId}
+          className="secondary-button"
           type="button"
-          key={reader.id}
-          onClick={() => onSelect(reader.id)}
+          onClick={model.connectReader}
+          disabled={isReaderBusy(model.phase)}
         >
-          <Database size={18} aria-hidden="true" />
-          <span>
-            <strong>{reader.name}</strong>
-            <small>{reader.vendor}</small>
-          </span>
+          <PlugZap size={17} aria-hidden="true" />
+          Refresh Reader
         </button>
-      ))}
-    </div>
+      </section>
+      <LibraryView
+        books={model.books}
+        coverUrls={model.coverUrls}
+        onOpenBook={model.openBook}
+      />
+    </>
   );
 }
 
-function BookTable({
+function LibraryView({
   books,
   coverUrls,
-  activeBookId,
-  isExporting,
-  onExport,
+  onOpenBook,
 }: {
   books: readonly ReaderBook[];
   coverUrls: ReadonlyMap<string, string>;
-  activeBookId: string | null;
+  onOpenBook(book: ReaderBook): void;
+}) {
+  return (
+    <section className="library-section" aria-labelledby="library-title">
+      <div className="section-intro library-header">
+        <div>
+          <p className="eyebrow">Library</p>
+          <h2 id="library-title">Annotated books</h2>
+        </div>
+        <div className="library-metrics" aria-label="Library totals">
+          <Metric label="Books" value={books.length} />
+          <Metric label="Highlights" value={sum(books, (book) => book.metrics.highlights)} />
+          <Metric label="Notes" value={sum(books, (book) => book.metrics.notes)} />
+        </div>
+      </div>
+
+      {books.length > 0 ? (
+        <div className="book-grid">
+          {books.map((book) => (
+            <button
+              className="book-card"
+              type="button"
+              key={book.id}
+              onClick={() => onOpenBook(book)}
+              aria-label={`Open ${book.title}`}
+            >
+              <BookCover book={book} coverUrl={coverUrls.get(book.id)} size="large" />
+              <span className="book-card-title">{book.title}</span>
+              {book.author ? <span className="book-card-author">{book.author}</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="library-empty">
+          <LibraryBig size={26} aria-hidden="true" />
+          <strong>No annotated books found.</strong>
+          <span>Try another reader folder if you expected to see saved highlights.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BookModal({
+  book,
+  annotations,
+  coverUrl,
+  isLoading,
+  isExporting,
+  isActiveExport,
+  onClose,
+  onExport,
+}: {
+  book: ReaderBook;
+  annotations: readonly ReaderAnnotation[];
+  coverUrl: string | undefined;
+  isLoading: boolean;
   isExporting: boolean;
+  isActiveExport: boolean;
+  onClose(): void;
   onExport(book: ReaderBook): void;
 }) {
-  if (books.length === 0) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    closeButton.current?.focus();
+  }, [book.id]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="book-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="book-dialog-title"
+      >
+        <button
+          className="icon-button close-button"
+          type="button"
+          aria-label="Close book"
+          onClick={onClose}
+          ref={closeButton}
+        >
+          <X size={20} aria-hidden="true" />
+        </button>
+
+        <header className="modal-book-header">
+          <BookCover book={book} coverUrl={coverUrl} size="hero" />
+          <div className="modal-title-block">
+            <p className="eyebrow">{book.readerId}</p>
+            <h2 id="book-dialog-title">{book.title}</h2>
+            {book.author ? <p className="modal-author">{book.author}</p> : null}
+            <div className="annotation-counts">
+              <span>{book.metrics.highlights} highlights</span>
+              <span>{book.metrics.notes} notes</span>
+            </div>
+          </div>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => onExport(book)}
+            disabled={isExporting}
+          >
+            {isActiveExport ? (
+              <Loader2 className="spin" size={17} aria-hidden="true" />
+            ) : (
+              <Download size={17} aria-hidden="true" />
+            )}
+            Export EPUB
+          </button>
+        </header>
+
+        <AnnotationReader annotations={annotations} isLoading={isLoading} />
+      </section>
+    </div>
+  );
+}
+
+function AnnotationReader({
+  annotations,
+  isLoading,
+}: {
+  annotations: readonly ReaderAnnotation[];
+  isLoading: boolean;
+}) {
+  const [index, setIndex] = useState(0);
+  const annotation = annotations[index] || null;
+
+  useEffect(() => {
+    setIndex(0);
+  }, [annotations]);
+
+  if (isLoading) {
     return (
-      <div className="empty-state">
-        <BookOpenCheck size={22} aria-hidden="true" />
-        <span>No annotated books loaded.</span>
+      <div className="annotation-loading">
+        <Loader2 className="spin" size={22} aria-hidden="true" />
+        <span>Opening annotations.</span>
+      </div>
+    );
+  }
+
+  if (!annotation) {
+    return (
+      <div className="annotation-loading">
+        <Quote size={22} aria-hidden="true" />
+        <span>No annotations found for this book.</span>
       </div>
     );
   }
 
   return (
-    <div className="table-shell">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Cover</th>
-            <th scope="col">Title</th>
-            <th scope="col">Reader</th>
-            <th scope="col" className="numeric">
-              Highlights
-            </th>
-            <th scope="col" className="numeric">
-              Notes
-            </th>
-            <th scope="col" className="action-column">
-              Export
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {books.map((book) => (
-            <tr key={book.id}>
-              <td>
-                {coverUrls.has(book.id) ? (
-                  <img className="cover" src={coverUrls.get(book.id)} alt={`${book.title} cover`} />
-                ) : (
-                  <div className="cover placeholder" aria-label="No cover" />
-                )}
-              </td>
-              <td>
-                <div className="book-title">{book.title}</div>
-                {book.author ? <div className="book-author">{book.author}</div> : null}
-              </td>
-              <td>{book.readerId}</td>
-              <td className="numeric">{book.metrics.highlights}</td>
-              <td className="numeric">{book.metrics.notes}</td>
-              <td className="action-column">
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => onExport(book)}
-                  disabled={isExporting}
-                >
-                  {activeBookId === book.id ? (
-                    <Loader2 className="spin" size={16} aria-hidden="true" />
-                  ) : (
-                    <Download size={16} aria-hidden="true" />
-                  )}
-                  Export EPUB
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="annotation-reader">
+      <div className="annotation-toolbar">
+        <span>
+          {index + 1} of {annotations.length}
+        </span>
+        <div className="annotation-controls">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Previous annotation"
+            onClick={() => setIndex(Math.max(0, index - 1))}
+            disabled={index === 0}
+          >
+            <ChevronLeft size={20} aria-hidden="true" />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Next annotation"
+            onClick={() => setIndex(Math.min(annotations.length - 1, index + 1))}
+            disabled={index >= annotations.length - 1}
+          >
+            <ChevronRight size={20} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <article className="annotation-page">
+        <div className="annotation-meta">
+          <span>{annotation.location.chapter}</span>
+          <span>{formatProgress(annotation.location.progress)}</span>
+        </div>
+        {annotation.text ? (
+          <blockquote style={{ borderColor: annotation.colorHex || undefined }}>
+            {annotation.text}
+          </blockquote>
+        ) : null}
+        {annotation.note ? (
+          <div className="reader-note">
+            <span>Note</span>
+            <p>{annotation.note}</p>
+          </div>
+        ) : null}
+      </article>
+    </div>
+  );
+}
+
+function BookCover({
+  book,
+  coverUrl,
+  size,
+}: {
+  book: ReaderBook;
+  coverUrl: string | undefined;
+  size: "large" | "hero";
+}) {
+  const [hasImageError, setHasImageError] = useState(false);
+
+  useEffect(() => {
+    setHasImageError(false);
+  }, [coverUrl]);
+
+  return coverUrl && !hasImageError ? (
+    <img
+      className={`book-cover ${size}`}
+      src={coverUrl}
+      alt={`${book.title} cover`}
+      onError={() => setHasImageError(true)}
+    />
+  ) : (
+    <div className={`book-cover placeholder ${size}`} aria-label={`${book.title} cover`}>
+      <BookOpen size={size === "hero" ? 34 : 26} aria-hidden="true" />
     </div>
   );
 }
@@ -239,8 +536,15 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
-function isBusy(phase: string) {
-  return phase === "connecting" || phase === "cataloging" || phase === "exporting";
+function isReaderBusy(phase: string) {
+  return phase === "connecting" || phase === "cataloging";
+}
+
+function formatProgress(progress: number) {
+  if (!Number.isFinite(progress) || progress <= 0) {
+    return "Saved passage";
+  }
+  return `${Math.round(progress * 100)}% through chapter`;
 }
 
 function sum(books: readonly ReaderBook[], selector: (book: ReaderBook) => number) {

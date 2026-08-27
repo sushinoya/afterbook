@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { ReaderConnectionError, errorMessage, errorName } from "../../domain/errors.js";
 import type {
   ReaderBook,
+  ReaderAnnotation,
   ReaderConnection,
   ReaderDefinition,
   ReaderId,
@@ -18,8 +19,13 @@ export interface AnnotationExportViewModel {
   phase: AnnotationExportPhase;
   statusMessage: string;
   activeBookId: string | null;
+  selectedBook: ReaderBook | null;
+  selectedAnnotations: readonly ReaderAnnotation[];
+  isLoadingSelectedBook: boolean;
   selectReader(readerId: ReaderId): void;
   connectReader(): Promise<void>;
+  openBook(book: ReaderBook): Promise<void>;
+  closeBook(): void;
   exportBook(book: ReaderBook): Promise<void>;
 }
 
@@ -28,6 +34,7 @@ export type AnnotationExportPhase =
   | "connecting"
   | "cataloging"
   | "ready"
+  | "opening-book"
   | "exporting"
   | "error";
 
@@ -37,9 +44,12 @@ interface AnnotationExportState {
   books: ReaderBook[];
   covers: Map<string, LocalFile>;
   coverUrls: Map<string, string>;
+  annotationsByBookId: Map<string, ReaderAnnotation[]>;
   phase: AnnotationExportPhase;
   statusMessage: string;
   activeBookId: string | null;
+  selectedBookId: string | null;
+  loadingBookId: string | null;
 }
 
 type AnnotationExportAction =
@@ -52,6 +62,9 @@ type AnnotationExportAction =
       covers: Map<string, LocalFile>;
       coverUrls: Map<string, string>;
     }
+  | { type: "book-open-started"; bookId: string }
+  | { type: "book-open-completed"; bookId: string; annotations: ReaderAnnotation[] }
+  | { type: "book-closed" }
   | { type: "export-started"; bookId: string }
   | { type: "export-completed"; filename: string }
   | { type: "failed"; message: string }
@@ -61,6 +74,7 @@ const STATUS_MESSAGES = {
   idle: "No reader connected.",
   connecting: "Connecting to reader source.",
   cataloging: "Reading annotation catalog.",
+  openingBook: "Opening annotations.",
   exporting: "Preparing EPUB.",
 } as const;
 
@@ -79,15 +93,25 @@ export function useAnnotationExport(
     books: [],
     covers: new Map(),
     coverUrls: new Map(),
+    annotationsByBookId: new Map(),
     phase: "idle",
     statusMessage: STATUS_MESSAGES.idle,
     activeBookId: null,
+    selectedBookId: null,
+    loadingBookId: null,
   });
 
   const selectedReader = useMemo(
     () => readers.find((reader) => reader.id === state.selectedReaderId) || initialReader,
     [initialReader, readers, state.selectedReaderId],
   );
+  const selectedBook = useMemo(
+    () => state.books.find((book) => book.id === state.selectedBookId) || null,
+    [state.books, state.selectedBookId],
+  );
+  const selectedAnnotations = selectedBook
+    ? state.annotationsByBookId.get(selectedBook.id) || []
+    : [];
 
   useEffect(() => {
     return () => {
@@ -131,6 +155,39 @@ export function useAnnotationExport(
     }
   }, [revokeCoverUrls, selectedReader]);
 
+  const openBook = useCallback(
+    async (book: ReaderBook) => {
+      if (!state.connection) {
+        dispatch({ type: "failed", message: "Connect a reader before opening annotations." });
+        return;
+      }
+
+      dispatch({ type: "book-open-started", bookId: book.id });
+      const cachedAnnotations = state.annotationsByBookId.get(book.id);
+      if (cachedAnnotations) {
+        dispatch({
+          type: "book-open-completed",
+          bookId: book.id,
+          annotations: cachedAnnotations,
+        });
+        return;
+      }
+
+      try {
+        const annotations =
+          await state.connection.capabilities.annotationExport.listAnnotations(book);
+        dispatch({ type: "book-open-completed", bookId: book.id, annotations });
+      } catch (error) {
+        dispatch({ type: "failed", message: friendlyErrorMessage(error) });
+      }
+    },
+    [state.annotationsByBookId, state.connection],
+  );
+
+  const closeBook = useCallback(() => {
+    dispatch({ type: "book-closed" });
+  }, []);
+
   const exportBook = useCallback(
     async (book: ReaderBook) => {
       if (!state.connection) {
@@ -165,8 +222,15 @@ export function useAnnotationExport(
     phase: state.phase,
     statusMessage: state.statusMessage,
     activeBookId: state.activeBookId,
+    selectedBook,
+    selectedAnnotations,
+    isLoadingSelectedBook: Boolean(
+      state.selectedBookId && state.loadingBookId === state.selectedBookId,
+    ),
     selectReader,
     connectReader,
+    openBook,
+    closeBook,
     exportBook,
   };
 }
@@ -184,9 +248,12 @@ function annotationExportReducer(
         books: [],
         covers: new Map(),
         coverUrls: new Map(),
+        annotationsByBookId: new Map(),
         phase: "idle",
         statusMessage: STATUS_MESSAGES.idle,
         activeBookId: null,
+        selectedBookId: null,
+        loadingBookId: null,
       };
     case "connect-started":
       return {
@@ -195,9 +262,12 @@ function annotationExportReducer(
         books: [],
         covers: new Map(),
         coverUrls: new Map(),
+        annotationsByBookId: new Map(),
         phase: "connecting",
         statusMessage: STATUS_MESSAGES.connecting,
         activeBookId: null,
+        selectedBookId: null,
+        loadingBookId: null,
       };
     case "catalog-started":
       return {
@@ -215,6 +285,36 @@ function annotationExportReducer(
         phase: "ready",
         statusMessage: readyMessage(action.books.length),
         activeBookId: null,
+        selectedBookId: null,
+        loadingBookId: null,
+      };
+    case "book-open-started":
+      return {
+        ...state,
+        selectedBookId: action.bookId,
+        loadingBookId: action.bookId,
+        phase: "opening-book",
+        statusMessage: STATUS_MESSAGES.openingBook,
+      };
+    case "book-open-completed": {
+      const annotationsByBookId = new Map(state.annotationsByBookId);
+      annotationsByBookId.set(action.bookId, action.annotations);
+      return {
+        ...state,
+        annotationsByBookId,
+        selectedBookId: action.bookId,
+        loadingBookId: null,
+        phase: "ready",
+        statusMessage: readyMessage(state.books.length),
+      };
+    }
+    case "book-closed":
+      return {
+        ...state,
+        selectedBookId: null,
+        loadingBookId: null,
+        phase: state.books.length > 0 ? "ready" : state.phase,
+        statusMessage: state.books.length > 0 ? readyMessage(state.books.length) : state.statusMessage,
       };
     case "export-started":
       return {
@@ -235,6 +335,7 @@ function annotationExportReducer(
         ...state,
         phase: "error",
         activeBookId: null,
+        loadingBookId: null,
         statusMessage: action.message,
       };
     case "reset-cover-urls":
