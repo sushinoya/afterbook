@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Afterbook</title>
+  </head>
+  <body>
+    <main>
+      <h1>Afterbook</h1>
+      <p>
+        Connect a Kobo eReader, choose the mounted KOBOeReader drive in Chrome or Edge,
+        then create a permanent clipping book from your highlights and notes.
+      </p>
+      <p>
+        All Kobo reading data stays local to this browser. Nothing is uploaded, and no
+        account is required.
+      </p>
+      <button id="connect-kobo" type="button">Connect Kobo</button>
+      <p id="status" role="status" aria-live="polite"></p>
+      <section aria-labelledby="books-heading">
+        <h2 id="books-heading">Books with highlights or notes</h2>
+        <div id="books"></div>
+      </section>
+    </main>
+
+    <script type="module">
+      import { startAfterbookApp } from "./app.js";
+
+      startAfterbookApp();
+    </script>
+  </body>
+</html>

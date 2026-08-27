@@ -1,0 +1,15 @@
+[build]
+  command = "npm run build"
+  publish = "."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
+
+[[headers]]
+  for = "/python/afterbook.zip"
+  [headers.values]
+    Content-Type = "application/zip"
+    Cache-Control = "no-cache"

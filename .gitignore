@@ -12,3 +12,6 @@ dist/
 htmlcov/
 .DS_Store
 *.epub
+web/node_modules/
+web/python/
+web/test-results/
