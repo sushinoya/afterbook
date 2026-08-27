@@ -123,7 +123,7 @@ it requires a Chromium-based desktop browser such as Chrome or Edge.
 The browser app has no backend and no accounts. Reader data stays in the
 browser: the selected reader adapter copies only the files needed for the active
 capability into a Pyodide worker, then the existing Python implementation lists
-books and returns the generated EPUB bytes.
+books and returns generated EPUB bytes for preview and download.
 
 Run it locally:
 

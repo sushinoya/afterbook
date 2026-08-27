@@ -15,8 +15,8 @@ React app
   -> adapter requests read-only File System Access API handles
   -> adapter copies capability-specific files into worker messages
   -> Pyodide worker stages files under /reader-source
-  -> afterbook.api lists annotations or generates EPUB bytes
-  -> React app downloads the generated EPUB
+  -> afterbook.api lists books or generates EPUB bytes
+  -> React app renders the library, EPUB preview, and EPUB download
 ```
 
 The real reader filesystem is never mounted into Python. The worker only sees
@@ -39,6 +39,8 @@ permission escalation, backups, validation, and rollback behavior.
   `ReaderDefinition`, `BrowserReaderAdapter`, `ReaderConnection`, and
   `AnnotationExportCapability`.
 - `web/src/features/annotation-export` owns the current workflow state machine.
+- `web/src/app` owns the welcome, connection wizard, library, and book preview
+  modal presentation.
 - `web/src/infrastructure/file-system` owns browser File System Access wrappers
   and path safety.
 - `web/src/infrastructure/readers/kobo` owns Kobo-specific file paths, cover
@@ -59,7 +61,7 @@ reader-agnostic view models and call feature actions.
 Add a new adapter that implements `BrowserReaderAdapter`, then register it in
 `reader-registry.ts`. A reader adapter should expose capabilities rather than
 device-specific UI. For example, a future reader can implement annotation export
-without affecting the current Kobo adapter or React table.
+without affecting the current Kobo adapter or library presentation.
 
 If a reader needs write access, model that as a separate capability from
 annotation export. Read-only export should remain safe by default.
