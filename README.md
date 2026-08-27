@@ -112,6 +112,39 @@ If automatic discovery does not find your reader source, provide its path explic
 afterbook --source /Volumes/KOBOeReader export
 ```
 
+## Browser app
+
+AfterBook also has a static browser app in [`web`](web). It uses the File System
+Access API, so it requires a Chromium-based desktop browser such as Chrome or
+Edge. You explicitly choose the mounted `KOBOeReader` drive, and AfterBook asks
+for read-only access.
+
+The browser app has no backend and no accounts. Kobo data stays in the browser:
+JavaScript copies the Kobo database snapshot and selected cached cover into a
+Pyodide worker, then the existing Python implementation lists books and returns
+the generated EPUB bytes.
+
+Run it locally:
+
+```console
+cd web
+npm install
+npm run build
+npm run dev
+```
+
+Then open <http://127.0.0.1:5173> in Chrome or Edge.
+
+Deploy it to Netlify with `web` as the base directory:
+
+```text
+Build command: npm run build
+Publish directory: .
+```
+
+The included Netlify config serves the static app and sets the cross-origin
+isolation headers required by Pyodide. Production deployments should use HTTPS.
+
 ## What the generated book contains
 
 A generated book is named `<Book Title> - My Clippings.epub` and contains:
@@ -176,6 +209,19 @@ ruff format --check .
 mypy afterbook
 python -m build
 ```
+
+Run the browser app checks:
+
+```console
+cd web
+npm install
+npm run build
+npm run test:unit
+npm run test:browser
+```
+
+If your default `python3` is older than 3.10, set `AFTERBOOK_PYTHON` to a Python
+3.10+ executable before running the browser tests.
 
 The test suite uses synthetic Kobo databases and never requires a connected eReader.
 
