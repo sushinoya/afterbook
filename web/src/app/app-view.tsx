@@ -53,7 +53,7 @@ export function AppView() {
           </div>
           <div>
             <h1>AfterBook</h1>
-            <p>Your highlights, gathered quietly.</p>
+            <p>Highlights and notes into a small personal ePub.</p>
           </div>
         </div>
         <StatusIndicator phase={model.phase} message={model.statusMessage} />
@@ -90,11 +90,12 @@ function WelcomeScreen({ onStart }: { onStart(): void }) {
   return (
     <main className="welcome-screen">
       <section className="welcome-copy" aria-labelledby="welcome-title">
-        <p className="eyebrow">Private reader companion</p>
+        <p className="eyebrow">Browser annotation export</p>
         <h1 id="welcome-title">AfterBook.</h1>
         <p className="welcome-lede">
-          A quieter home for the passages you kept. Connect your reader, gather
-          your annotated books, and turn your highlights into a lasting EPUB.
+          Keep the parts of an eBook that mattered to you. Connect a supported
+          ebook reader and turn highlights and notes into a small personal ePub
+          book.
         </p>
         <div className="welcome-actions">
           <button className="primary-button large" type="button" onClick={onStart}>
