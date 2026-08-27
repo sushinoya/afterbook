@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,24 +11,26 @@ const PYTHON = resolvePython();
 
 test("selects a Kobo directory, displays books, and downloads a valid EPUB", async ({ page }) => {
   const fixture = buildFixture();
-  await page.addInitScript(installFakeBrowserApis, fixture);
+  test.setTimeout(120_000);
+  await page.addInitScript(installFakeKoboDirectory, fixture);
 
   await page.goto("/");
   await expect(page.getByText(/All Kobo reading data stays local/)).toBeVisible();
 
   await page.getByRole("button", { name: "Connect Kobo" }).click();
 
-  await expect(page.getByRole("cell", { name: "Browser Fixture - Test Author" })).toBeVisible();
-  await expect(page.getByAltText("Browser Fixture cover")).toBeVisible();
-  await expect(page.getByText("1 book found.")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Browser Fixture - Test Author" })).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByAltText("Browser Fixture cover")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("1 book found.")).toBeVisible({ timeout: 60_000 });
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Create clipping book" }).click();
   const download = await downloadPromise;
 
   assert.equal(download.suggestedFilename(), fixture.export.filename);
-  const downloaded = readFileSync(await download.path());
-  assert.deepEqual(downloaded, Buffer.from(fixture.export.bytes, "base64"));
+  assertValidEpub(await download.path());
 
   const events = await page.evaluate(() => window.__afterbookEvents);
   assert.deepEqual(events.pickerOptions, { id: "afterbook-kobo", mode: "read" });
@@ -136,7 +138,34 @@ function resolvePython() {
   throw new Error("Afterbook browser tests require Python 3.10 or newer.");
 }
 
-function installFakeBrowserApis(fixture) {
+function assertValidEpub(downloadPath) {
+  const output = execFileSync(
+    PYTHON,
+    [
+      "-c",
+      `
+import sys
+import zipfile
+path = sys.argv[1]
+with zipfile.ZipFile(path) as epub:
+    assert epub.read("mimetype") == b"application/epub+zip"
+    names = set(epub.namelist())
+    assert "OEBPS/archive/annotations.json" in names
+    assert "OEBPS/cover.png" in names
+    chapter = epub.read("OEBPS/chapter-1.xhtml").decode()
+    assert "A browser-tested highlight." in chapter
+    archive = epub.read("OEBPS/archive/annotations.json").decode()
+    assert "A browser-tested note." in archive
+print("valid")
+`,
+      downloadPath,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(output.trim(), "valid");
+}
+
+function installFakeKoboDirectory(fixture) {
   class FakeFileHandle {
     constructor(name, bytes) {
       this.kind = "file";
@@ -220,27 +249,27 @@ function installFakeBrowserApis(fixture) {
     window.__afterbookEvents.pickerOptions = options;
     return root;
   };
-
-  window.Worker = class FakeWorker {
-    constructor() {
-      this.listeners = [];
+  const NativeWorker = window.Worker;
+  window.Worker = class LoggedWorker {
+    constructor(url, options) {
+      this.worker = new NativeWorker(url, options);
     }
 
-    addEventListener(type, listener) {
-      if (type === "message") {
-        this.listeners.push(listener);
-      }
+    addEventListener(...args) {
+      return this.worker.addEventListener(...args);
     }
 
-    postMessage(message) {
+    removeEventListener(...args) {
+      return this.worker.removeEventListener(...args);
+    }
+
+    postMessage(message, transfer) {
       const payload = message.payload || {};
       if (message.type === "loadSnapshot") {
         window.__afterbookEvents.workerMessages.push({
           type: message.type,
           paths: payload.files.map((file) => file.path),
         });
-        this.reply(message.id, { books: fixture.books });
-        return;
       }
       if (message.type === "exportBook") {
         window.__afterbookEvents.workerMessages.push({
@@ -248,22 +277,13 @@ function installFakeBrowserApis(fixture) {
           bookId: payload.bookId,
           coverPath: payload.coverFile?.path || null,
         });
-        this.reply(message.id, {
-          filename: fixture.export.filename,
-          data: decodeBase64(fixture.export.bytes).buffer,
-        });
       }
+      return this.worker.postMessage(message, transfer);
     }
 
-    reply(id, payload) {
-      queueMicrotask(() => {
-        for (const listener of this.listeners) {
-          listener({ data: { id, type: "success", payload } });
-        }
-      });
+    terminate() {
+      return this.worker.terminate();
     }
-
-    terminate() {}
   };
 
   function decodeBase64(encoded) {
