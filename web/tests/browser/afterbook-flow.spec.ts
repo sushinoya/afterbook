@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { DIRECTORY_PICKER_OPTIONS } from "../../src/infrastructure/file-system/local-files.js";
 import { WORKER_REQUESTS } from "../../src/infrastructure/worker/protocol.js";
@@ -99,11 +99,10 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   await fixtureBook.click();
   const dialog = page.getByRole("dialog", { name: "Browser Fixture" });
   await expect(dialog).toBeVisible({ timeout: 60_000 });
+  await expect(dialog.locator('.open-book-reader[data-flip-engine="page-flip"]')).toBeVisible();
   await expect(dialog.getByText(/Page 1 of \d+/)).toBeVisible();
-  await dialog.getByRole("button", { name: "Next EPUB page" }).click();
-  await dialog.getByRole("button", { name: "Next EPUB page" }).click();
+  await dialog.getByRole("button", { name: "Next page" }).click();
   await expect(dialog.getByText("A browser-tested highlight.")).toBeVisible();
-  await dialog.getByRole("button", { name: "Next EPUB page" }).click();
   await expect(dialog.getByText("A browser-tested note.")).toBeVisible();
 
   await dialog.getByRole("button", { name: "Close book" }).click();
@@ -142,6 +141,48 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   assert.equal(exportMessage.type, WORKER_REQUESTS.generateAnnotationEpub);
   assert.equal(exportMessage.bookId, "browser-fixture-book");
   assert.equal(exportMessage.coverPath, firstCoverPath);
+});
+
+test("renders the EPUB preview as an open book across landscape screens", async ({ page }) => {
+  const fixture = buildFixture();
+  test.setTimeout(120_000);
+  await page.addInitScript(installFakeKoboDirectory, {
+    fixture,
+    workerRequests: WORKER_REQUESTS,
+  } satisfies BrowserHarness);
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1024, height: 576 },
+    { width: 720, height: 405 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const dialog = await openFixtureBook(page);
+    const initialMetrics = await bookShapeMetrics(page);
+    assertBookShape(initialMetrics, viewport);
+
+    const fontSizeBefore = await visibleReaderFontSize(dialog);
+    await setReaderTextSizeToLarge(page, dialog);
+    await expect
+      .poll(() => visibleReaderFontSize(dialog), {
+        message: "font size slider should resize book text",
+      })
+      .toBeGreaterThan(fontSizeBefore);
+
+    await dragTopRightPageCorner(page, dialog);
+    await expect(dialog.getByText("A browser-tested highlight.")).toBeVisible();
+    await expect(dialog.getByText("A browser-tested note.")).toBeVisible();
+    await expect(dialog.locator('.open-book-reader[data-flip-state="read"]')).toBeVisible({
+      timeout: 3_000,
+    });
+
+    const turnedMetrics = await bookShapeMetrics(page);
+    assertBookShape(turnedMetrics, viewport);
+    assert.ok(
+      Math.abs(turnedMetrics.shell.top - initialMetrics.shell.top) <= 1,
+      "book shell should not jump vertically while turning pages",
+    );
+  }
 });
 
 test("explains when the File System Access API is unavailable", async ({ page }) => {
@@ -205,6 +246,126 @@ test("handles a selected folder without the Kobo database", async ({ page }) => 
 
   await expect(page.getByRole("status")).toHaveText("Selected source is not a supported reader.");
 });
+
+async function openFixtureBook(page: Page) {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Get started" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Connect Reader" }).click();
+  const fixtureBook = page.getByRole("button", { name: "Open Browser Fixture" });
+  await fixtureBook.waitFor({ state: "visible", timeout: 60_000 });
+  await fixtureBook.click();
+  const dialog = page.getByRole("dialog", { name: "Browser Fixture" });
+  await expect(dialog).toBeVisible({ timeout: 60_000 });
+  await expect(dialog.locator(".flip-book-page.--simple").first()).toBeVisible({
+    timeout: 60_000,
+  });
+  return dialog;
+}
+
+async function bookShapeMetrics(page: Page) {
+  return page.locator(".open-book-reader").evaluate((reader) => {
+    const shell = reader.querySelector(".page-flip-shell");
+    const book = reader.querySelector(".page-flip-book");
+    const wrapper = reader.querySelector(".stf__wrapper");
+    if (!shell || !book || !wrapper) {
+      throw new Error("Expected page-flip book DOM to be mounted.");
+    }
+    const shellRect = shell.getBoundingClientRect();
+    const shellStyle = getComputedStyle(shell);
+    const visiblePages = Array.from(reader.querySelectorAll(".flip-book-page"))
+      .filter((pageElement) => {
+        const rect = pageElement.getBoundingClientRect();
+        const style = getComputedStyle(pageElement);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none";
+      })
+      .map((pageElement) => {
+        const rect = pageElement.getBoundingClientRect();
+        const style = getComputedStyle(pageElement);
+        return {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          borderTopLeftRadius: style.borderTopLeftRadius,
+          borderTopRightRadius: style.borderTopRightRadius,
+          boxShadow: style.boxShadow,
+          overflowY: style.overflowY,
+        };
+      });
+    const spreadLeft = Math.min(...visiblePages.map((pageMetrics) => pageMetrics.left));
+    const spreadRight = Math.max(...visiblePages.map((pageMetrics) => pageMetrics.right));
+    const spreadHeight = Math.max(...visiblePages.map((pageMetrics) => pageMetrics.height));
+
+    return {
+      documentScrollWidth: document.documentElement.scrollWidth,
+      engine: reader.getAttribute("data-flip-engine"),
+      shell: {
+        top: shellRect.top,
+        width: shellRect.width,
+        height: shellRect.height,
+        filter: shellStyle.filter,
+      },
+      spread: {
+        width: spreadRight - spreadLeft,
+        height: spreadHeight,
+      },
+      isLandscape: wrapper.classList.contains("--landscape"),
+      pages: visiblePages,
+    };
+  });
+}
+
+function assertBookShape(
+  metrics: Awaited<ReturnType<typeof bookShapeMetrics>>,
+  viewport: { width: number; height: number },
+) {
+  assert.ok(
+    metrics.documentScrollWidth <= viewport.width + 1,
+    "modal must not create horizontal overflow",
+  );
+  assert.equal(metrics.engine, "page-flip", "reader should be backed by the page-flip engine");
+  assert.equal(metrics.isLandscape, true, "book should stay in two-page landscape mode");
+  assert.ok(metrics.spread.width > metrics.spread.height * 1.28, "spread should read as an open book");
+  assert.notEqual(metrics.shell.filter, "none", "book should cast a drop shadow");
+  assert.ok(metrics.pages.length >= 2, "spread should expose two visible pages");
+
+  for (const pageMetrics of metrics.pages) {
+    assert.ok(pageMetrics.height > pageMetrics.width, "each page should be portrait-shaped");
+    assert.equal(pageMetrics.overflowY, "hidden", "pages should not show vertical scrollbars");
+    assert.notEqual(pageMetrics.boxShadow, "none", "pages should have inset/depth shadow");
+    assert.notEqual(pageMetrics.borderTopLeftRadius, "0px", "pages should have rounded corners");
+    assert.notEqual(pageMetrics.borderTopRightRadius, "0px", "pages should have rounded corners");
+  }
+}
+
+async function visibleReaderFontSize(dialog: Locator) {
+  return dialog.locator(".flip-book-page.--simple .epub-page-content").first().evaluate((element) =>
+    Number.parseFloat(getComputedStyle(element).fontSize),
+  );
+}
+
+async function setReaderTextSizeToLarge(page: Page, dialog: Locator) {
+  const slider = dialog.getByLabel("Reader text size");
+  const box = await slider.boundingBox();
+  assert.ok(box, "expected visible text-size slider");
+  await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
+}
+
+async function dragTopRightPageCorner(page: Page, dialog: Locator) {
+  const rightPage = dialog.locator(".flip-book-page.--right.--simple").first();
+  const box = await rightPage.boundingBox();
+  assert.ok(box, "expected a visible right-hand page to drag");
+  const startX = box.x + box.width - 6;
+  const startY = box.y + 6;
+  const endX = box.x - box.width * 0.85;
+  const endY = box.y + box.height * 0.2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 12 });
+  await page.mouse.up();
+}
 
 function buildFixture(): BrowserFixture {
   return JSON.parse(
