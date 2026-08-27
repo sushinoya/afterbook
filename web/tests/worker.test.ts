@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createWorkerController, safeRelativePath, stageFiles } from "../pyodide-worker.js";
-import { createAfterbookClient } from "../worker-client.js";
+import {
+  createWorkerController,
+  safeRelativePath,
+  stageFiles,
+  type PyodideFS,
+} from "../src/pyodide-worker.js";
+import type { KoboFile } from "../src/kobo-files.js";
+import { createAfterbookClient } from "../src/worker-client.js";
 
 test("stageFiles writes database sidecars into the Kobo root and clears stale files", () => {
   const FS = new FakeFS();
@@ -13,9 +19,9 @@ test("stageFiles writes database sidecars into the Kobo root and clears stale fi
   stageFiles(
     FS,
     [
-      { path: ".kobo/KoboReader.sqlite", bytes: bytes([1]) },
-      { path: ".kobo/KoboReader.sqlite-wal", bytes: bytes([2]) },
-      { path: ".kobo/KoboReader.sqlite-shm", bytes: bytes([3]) },
+      koboFile(".kobo/KoboReader.sqlite", [1]),
+      koboFile(".kobo/KoboReader.sqlite-wal", [2]),
+      koboFile(".kobo/KoboReader.sqlite-shm", [3]),
     ],
     "/kobo",
     { clear: true },
@@ -40,7 +46,7 @@ test("createWorkerController lists books and exports EPUB bytes through fake Pyo
 
   const listed = await controller.handle({
     type: "loadSnapshot",
-    payload: { files: [{ path: ".kobo/KoboReader.sqlite", bytes: bytes([1]) }] },
+    payload: { files: [koboFile(".kobo/KoboReader.sqlite", [1])] },
   });
 
   assert.deepEqual(listed.books, [{ source_id: "book-id", title: "Book" }]);
@@ -50,7 +56,7 @@ test("createWorkerController lists books and exports EPUB bytes through fake Pyo
     type: "exportBook",
     payload: {
       bookId: "book-id",
-      coverFile: { path: ".kobo-images/1/2/book - N3_FULL.parsed", bytes: bytes([7, 8]) },
+      coverFile: koboFile(".kobo-images/1/2/book - N3_FULL.parsed", [7, 8]),
     },
   });
 
@@ -90,12 +96,16 @@ test("createWorkerController retries initialization after a load failure", async
 test("createAfterbookClient resolves responses and transfers bytes", async () => {
   const worker = new FakeWorker();
   const client = createAfterbookClient({ worker });
-  const file = { path: ".kobo/KoboReader.sqlite", bytes: bytes([1, 2]) };
+  const file = koboFile(".kobo/KoboReader.sqlite", [1, 2]);
   const promise = client.loadSnapshot([file]);
 
-  assert.equal(worker.messages[0].type, "loadSnapshot");
-  assert.equal(worker.transfers[0].length, 1);
-  worker.reply({ id: worker.messages[0].id, type: "success", payload: { books: [] } });
+  const message = worker.messages[0];
+  const transfer = worker.transfers[0];
+  assert.ok(message);
+  assert.ok(transfer);
+  assert.equal(message.type, "loadSnapshot");
+  assert.equal(transfer.length, 1);
+  worker.reply({ id: message.id, type: "success", payload: { books: [] } });
 
   assert.deepEqual(await promise, { books: [] });
 });
@@ -104,9 +114,11 @@ test("createAfterbookClient rejects worker errors", async () => {
   const worker = new FakeWorker();
   const client = createAfterbookClient({ worker });
   const promise = client.exportBook("book-id", null);
+  const message = worker.messages[0];
+  assert.ok(message);
 
   worker.reply({
-    id: worker.messages[0].id,
+    id: message.id,
     type: "error",
     error: { name: "Error", message: "boom" },
   });
@@ -117,7 +129,7 @@ test("createAfterbookClient rejects worker errors", async () => {
 test("createAfterbookClient rejects pending requests when the worker crashes", async () => {
   const worker = new FakeWorker();
   const client = createAfterbookClient({ worker });
-  const promise = client.loadSnapshot([{ path: ".kobo/KoboReader.sqlite", bytes: bytes([1]) }]);
+  const promise = client.loadSnapshot([koboFile(".kobo/KoboReader.sqlite", [1])]);
 
   worker.emit("error", { message: "worker exploded", filename: "worker.js", lineno: 10 });
 
@@ -131,29 +143,37 @@ test("createAfterbookClient rejects synchronous postMessage failures", async () 
   const client = createAfterbookClient({ worker });
 
   await assert.rejects(
-    () => client.loadSnapshot([{ path: ".kobo/KoboReader.sqlite", bytes: bytes([1]) }]),
+    () => client.loadSnapshot([koboFile(".kobo/KoboReader.sqlite", [1])]),
     /detached buffer/,
   );
 });
 
-function bytes(values) {
+function bytes(values: number[]): Uint8Array {
   return new Uint8Array(values);
+}
+
+function koboFile(path: string, values: number[]): KoboFile {
+  return {
+    path,
+    name: path.split("/").pop() || path,
+    bytes: bytes(values),
+  };
 }
 
 function fakePyodide() {
   const FS = new FakeFS();
-  const globals = new Map();
+  const globals = new Map<string, unknown>();
   return {
     FS,
     globals: {
-      set(key, value) {
+      set(key: string, value: unknown) {
         globals.set(key, value);
       },
-      get(key) {
+      get(key: string) {
         return globals.get(key);
       },
     },
-    runPython(code) {
+    runPython(code: string) {
       if (code.includes("list_kobo_books")) {
         return JSON.stringify([{ source_id: "book-id", title: "Book" }]);
       }
@@ -164,25 +184,52 @@ function fakePyodide() {
       }
       return null;
     },
+    unpackArchive() {},
   };
 }
 
+interface FakeWorkerMessage {
+  id: number;
+  type: string;
+  payload: unknown;
+}
+
 class FakeWorker {
+  messageListeners: Set<(event: MessageEvent) => void>;
+  errorListeners: Set<(event: ErrorEvent) => void>;
+  messageErrorListeners: Set<() => void>;
+  messages: FakeWorkerMessage[];
+  transfers: Transferable[][];
+  postMessageError: Error | null;
+
   constructor() {
-    this.listeners = new Map();
+    this.messageListeners = new Set();
+    this.errorListeners = new Set();
+    this.messageErrorListeners = new Set();
     this.messages = [];
     this.transfers = [];
     this.postMessageError = null;
   }
 
-  addEventListener(type, listener) {
-    if (!this.listeners.has(type)) {
-      this.listeners.set(type, new Set());
+  addEventListener(type: "message", listener: (event: MessageEvent) => void): void;
+  addEventListener(type: "error", listener: (event: ErrorEvent) => void): void;
+  addEventListener(type: "messageerror", listener: () => void): void;
+  addEventListener(
+    type: "message" | "error" | "messageerror",
+    listener: ((event: MessageEvent) => void) | ((event: ErrorEvent) => void) | (() => void),
+  ): void {
+    if (type === "message") {
+      this.messageListeners.add(listener as (event: MessageEvent) => void);
+      return;
     }
-    this.listeners.get(type).add(listener);
+    if (type === "error") {
+      this.errorListeners.add(listener as (event: ErrorEvent) => void);
+      return;
+    }
+    this.messageErrorListeners.add(listener as () => void);
   }
 
-  postMessage(message, transfer) {
+  postMessage(message: FakeWorkerMessage, transfer: Transferable[] = []) {
     if (this.postMessageError) {
       throw this.postMessageError;
     }
@@ -190,29 +237,43 @@ class FakeWorker {
     this.transfers.push(transfer);
   }
 
-  reply(data) {
-    this.emit("message", { data });
+  reply(data: unknown) {
+    for (const listener of this.messageListeners) {
+      listener({ data } as MessageEvent);
+    }
   }
 
-  emit(type, event) {
-    for (const listener of this.listeners.get(type) || []) {
-      listener(event);
+  emit(type: "error", event: { message?: string; filename?: string; lineno?: number }): void;
+  emit(type: "messageerror", event?: undefined): void;
+  emit(type: "error" | "messageerror", event?: { message?: string; filename?: string; lineno?: number }) {
+    if (type === "messageerror") {
+      for (const listener of this.messageErrorListeners) {
+        listener();
+      }
+      return;
+    }
+    for (const listener of this.errorListeners) {
+      listener(event as ErrorEvent);
     }
   }
 
   terminate() {}
 }
 
-class FakeFS {
+type FakeFSEntry = { type: "dir" } | { type: "file"; data: Uint8Array };
+
+class FakeFS implements PyodideFS {
+  entries: Map<string, FakeFSEntry>;
+
   constructor() {
     this.entries = new Map([["/", { type: "dir" }]]);
   }
 
-  analyzePath(path) {
+  analyzePath(path: string): { exists: boolean } {
     return { exists: this.entries.has(path) };
   }
 
-  mkdirTree(path) {
+  mkdirTree(path: string): void {
     const segments = path.split("/").filter(Boolean);
     let current = "";
     for (const segment of segments) {
@@ -221,18 +282,18 @@ class FakeFS {
     }
   }
 
-  mkdir(path) {
+  mkdir(path: string): void {
     if (!this.entries.has(path)) {
       this.entries.set(path, { type: "dir" });
     }
   }
 
-  writeFile(path, bytesValue) {
+  writeFile(path: string, bytesValue: Uint8Array): void {
     this.mkdirTree(parentPath(path));
     this.entries.set(path, { type: "file", data: new Uint8Array(bytesValue) });
   }
 
-  readFile(path) {
+  readFile(path: string): Uint8Array {
     const entry = this.entries.get(path);
     if (!entry || entry.type !== "file") {
       throw new Error(`missing file ${path}`);
@@ -240,7 +301,7 @@ class FakeFS {
     return entry.data;
   }
 
-  stat(path) {
+  stat(path: string): { mode: number } {
     const entry = this.entries.get(path);
     if (!entry) {
       throw new Error(`missing entry ${path}`);
@@ -248,11 +309,11 @@ class FakeFS {
     return { mode: entry.type === "dir" ? 0o040000 : 0o100000 };
   }
 
-  isDir(mode) {
+  isDir(mode: number): boolean {
     return (mode & 0o040000) === 0o040000;
   }
 
-  readdir(path) {
+  readdir(path: string): string[] {
     const prefix = path === "/" ? "/" : `${path}/`;
     const names = new Set([".", ".."]);
     for (const entryPath of this.entries.keys()) {
@@ -267,16 +328,16 @@ class FakeFS {
     return [...names];
   }
 
-  unlink(path) {
+  unlink(path: string): void {
     this.entries.delete(path);
   }
 
-  rmdir(path) {
+  rmdir(path: string): void {
     this.entries.delete(path);
   }
 }
 
-function parentPath(path) {
+function parentPath(path: string): string {
   const index = path.lastIndexOf("/");
   return index > 0 ? path.slice(0, index) : "/";
 }

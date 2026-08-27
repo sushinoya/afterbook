@@ -7,13 +7,16 @@ import {
   safeRelativePathSegments,
   selectKoboDirectory,
   validateKoboDirectory,
-} from "../kobo-files.js";
+  type DirectoryPickerScope,
+  type KoboDirectoryHandle,
+  type KoboFileHandle,
+} from "../src/kobo-files.js";
 
 test("selectKoboDirectory requests read-only access", async () => {
-  let options;
+  let options: { id: string; mode: "read" } | undefined;
   const directory = fakeDirectory({ ".kobo": fakeDirectory({ "KoboReader.sqlite": bytes([1]) }) });
-  const scope = {
-    showDirectoryPicker(requestedOptions) {
+  const scope: DirectoryPickerScope = {
+    async showDirectoryPicker(requestedOptions) {
       options = requestedOptions;
       return directory;
     },
@@ -58,9 +61,9 @@ test("readKoboSnapshot copies database and existing sidecars", async () => {
     snapshot.map((file) => file.path),
     [".kobo/KoboReader.sqlite", ".kobo/KoboReader.sqlite-wal", ".kobo/KoboReader.sqlite-shm"],
   );
-  assert.deepEqual([...snapshot[0].bytes], [1, 2, 3]);
-  assert.deepEqual([...snapshot[1].bytes], [4, 5]);
-  assert.deepEqual([...snapshot[2].bytes], [6]);
+  assert.deepEqual([...snapshot[0]!.bytes], [1, 2, 3]);
+  assert.deepEqual([...snapshot[1]!.bytes], [4, 5]);
+  assert.deepEqual([...snapshot[2]!.bytes], [6]);
   assert.equal(directory.writeRequested, false);
 });
 
@@ -87,6 +90,7 @@ test("findCachedCover prefers priority candidates", async () => {
 
   const cover = await findCachedCover(directory, locator);
 
+  assert.ok(cover);
   assert.equal(cover.path, ".kobo-images/1/2/book - N3_LIBRARY_GRID.parsed");
   assert.deepEqual([...cover.bytes], [7, 8]);
 });
@@ -112,6 +116,7 @@ test("findCachedCover falls back to the largest parsed variant", async () => {
 
   const cover = await findCachedCover(directory, locator);
 
+  assert.ok(cover);
   assert.equal(cover.path, ".kobo-images/1/2/book - LARGE.parsed");
   assert.deepEqual([...cover.bytes], [1, 2, 3]);
 });
@@ -136,6 +141,7 @@ test("findCachedCover ignores unsafe fallback entry names", async () => {
 
   const cover = await findCachedCover(directory, locator);
 
+  assert.ok(cover);
   assert.equal(cover.path, ".kobo-images/1/2/book - SAFE.parsed");
 });
 
@@ -145,71 +151,111 @@ test("safeRelativePathSegments rejects escaped paths", () => {
   assert.throws(() => safeRelativePathSegments("C:\\KOBOeReader\\.kobo"), /relative/);
 });
 
-function bytes(values) {
+function bytes(values: number[]): Uint8Array {
   return new Uint8Array(values);
 }
 
-function fakeDirectory(entries, options = {}) {
-  const normalizedEntries = normalizeEntries(entries);
-  const handle = {
-    kind: "directory",
-    name: options.name || "",
-    writeRequested: false,
-    async queryPermission(descriptor) {
-      assert.deepEqual(descriptor, { mode: "read" });
-      return options.permission || "granted";
-    },
-    requestPermission:
-      options.requestPermission === null
-        ? undefined
-        : async (descriptor) => {
-            assert.deepEqual(descriptor, { mode: "read" });
-            return options.permission || "granted";
-          },
-    async getDirectoryHandle(name, requestOptions) {
-      assert.equal(requestOptions, undefined);
-      const child = normalizedEntries[name];
-      if (!child || child.kind !== "directory") {
-        throw notFound();
-      }
-      return child;
-    },
-    async getFileHandle(name, requestOptions) {
-      assert.equal(requestOptions, undefined);
-      const child = normalizedEntries[name];
-      if (!child || child.kind !== "file") {
-        throw notFound();
-      }
-      return child;
-    },
-    async *entries() {
-      for (const [name, child] of Object.entries(normalizedEntries)) {
-        yield [name, child];
-      }
-    },
-  };
-  return handle;
+type FakeEntry = FakeDirectoryHandle | FakeFileHandle;
+type FakeEntryInput = Uint8Array | FakeEntry;
+type FakeDirectoryEntries = Record<string, FakeEntryInput>;
+
+interface FakeDirectoryOptions {
+  name?: string;
+  permission?: PermissionState;
+  requestPermission?: null;
 }
 
-function fakeFile(name, data) {
-  return {
-    kind: "file",
-    name,
-    async getFile() {
-      return new File([data], name);
-    },
-  };
+class FakeDirectoryHandle implements KoboDirectoryHandle {
+  readonly kind = "directory";
+  readonly name: string;
+  readonly writeRequested = false;
+  readonly normalizedEntries: Record<string, FakeEntry>;
+  requestPermission?: KoboDirectoryHandle["requestPermission"];
+
+  constructor(entries: FakeDirectoryEntries, private readonly options: FakeDirectoryOptions = {}) {
+    this.name = options.name || "";
+    this.normalizedEntries = normalizeEntries(entries);
+    if (options.requestPermission !== null) {
+      this.requestPermission = async (descriptor) => {
+        assert.deepEqual(descriptor, { mode: "read" });
+        return options.permission || "granted";
+      };
+    }
+  }
+
+  async queryPermission(descriptor: { mode: "read" }): Promise<PermissionState> {
+    assert.deepEqual(descriptor, { mode: "read" });
+    return this.options.permission || "granted";
+  }
+
+  async getDirectoryHandle(name: string, requestOptions?: unknown): Promise<KoboDirectoryHandle> {
+    assert.equal(requestOptions, undefined);
+    const child = this.normalizedEntries[name];
+    if (!child || child.kind !== "directory") {
+      throw notFound();
+    }
+    return child;
+  }
+
+  async getFileHandle(name: string, requestOptions?: unknown): Promise<KoboFileHandle> {
+    assert.equal(requestOptions, undefined);
+    const child = this.normalizedEntries[name];
+    if (!child || child.kind !== "file") {
+      throw notFound();
+    }
+    return child;
+  }
+
+  async *entries(): AsyncIterable<[string, FakeEntry]> {
+    for (const [name, child] of Object.entries(this.normalizedEntries)) {
+      yield [name, child];
+    }
+  }
 }
 
-function normalizeEntries(entries) {
+class FakeFileHandle implements KoboFileHandle {
+  readonly kind = "file";
+
+  constructor(
+    readonly name: string,
+    private readonly data: Uint8Array,
+  ) {}
+
+  async getFile(): Promise<File> {
+    return new File([arrayBufferFor(this.data)], this.name);
+  }
+}
+
+function fakeDirectory(
+  entries: FakeDirectoryEntries,
+  options: FakeDirectoryOptions = {},
+): FakeDirectoryHandle {
+  return new FakeDirectoryHandle(entries, options);
+}
+
+function fakeFile(name: string, data: Uint8Array): FakeFileHandle {
+  return new FakeFileHandle(name, data);
+}
+
+function normalizeEntries(entries: FakeDirectoryEntries): Record<string, FakeEntry> {
   return Object.fromEntries(
     Object.entries(entries).map(([name, value]) => [
       name,
-      value?.kind ? value : fakeFile(name, value),
+      isFakeEntry(value) ? value : fakeFile(name, value),
     ]),
   );
 }
 
-function notFound() {
+function isFakeEntry(value: FakeEntryInput): value is FakeEntry {
+  return value instanceof FakeDirectoryHandle || value instanceof FakeFileHandle;
+}
+
+function notFound(): Error {
   return Object.assign(new Error("not found"), { name: "NotFoundError" });
+}
+
+function arrayBufferFor(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }

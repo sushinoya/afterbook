@@ -3,14 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "python3 scripts/sync_python_package.py",
-    "dev": "python3 -m http.server 5173",
+    "build": "npm run build:python && npm run build:web",
+    "build:python": "python3 scripts/sync_python_package.py",
+    "build:web": "tsc -p tsconfig.app.json",
+    "dev": "npm run build && python3 -m http.server 5173",
     "test": "npm run test:unit && npm run test:browser",
-    "test:unit": "node --test tests/*.test.mjs",
-    "test:browser": "playwright test"
+    "test:unit": "tsc -p tsconfig.tests.json && node --test dist-tests/tests/*.test.js",
+    "test:browser": "npm run build && playwright test",
+    "typecheck": "tsc -p tsconfig.tests.json --noEmit"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1"
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^24.13.3",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=20"

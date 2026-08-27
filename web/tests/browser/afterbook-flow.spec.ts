@@ -9,8 +9,55 @@ import { expect, test } from "@playwright/test";
 const WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const PYTHON = resolvePython();
 
+interface BrowserFixtureBook {
+  cover: {
+    priority_candidates: string[];
+  };
+}
+
+interface BrowserFixture {
+  files: Record<string, string>;
+  books: BrowserFixtureBook[];
+  export: {
+    filename: string;
+  };
+}
+
+type PickerOptions = { id: string; mode: "read" };
+type ReadPermissionDescriptor = { mode: "read" };
+
+type LoggedWorkerMessage =
+  | { type: "loadSnapshot"; paths: string[] }
+  | { type: "exportBook"; bookId: string; coverPath: string | null };
+
+interface AfterbookEvents {
+  pickerOptions: PickerOptions | null;
+  workerMessages: LoggedWorkerMessage[];
+}
+
+interface WorkerRequestLogPayload {
+  files?: Array<{ path: string }>;
+  bookId?: string;
+  coverFile?: { path?: string } | null;
+}
+
+interface WorkerRequestLogMessage {
+  type?: string;
+  payload?: WorkerRequestLogPayload;
+}
+
+declare global {
+  interface Window {
+    __afterbookEvents: AfterbookEvents;
+    showDirectoryPicker?: (options: PickerOptions) => Promise<unknown>;
+  }
+}
+
 test("selects a Kobo directory, displays books, and downloads a valid EPUB", async ({ page }) => {
   const fixture = buildFixture();
+  const firstBook = fixture.books[0];
+  const firstCoverPath = firstBook?.cover.priority_candidates[0];
+  assert.ok(firstCoverPath);
   test.setTimeout(120_000);
   await page.addInitScript(installFakeKoboDirectory, fixture);
 
@@ -30,19 +77,25 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   const download = await downloadPromise;
 
   assert.equal(download.suggestedFilename(), fixture.export.filename);
-  assertValidEpub(await download.path());
+  const downloadPath = await download.path();
+  assert.ok(downloadPath);
+  assertValidEpub(downloadPath);
 
-  const events = await page.evaluate(() => window.__afterbookEvents);
+  const events = await page.evaluate<AfterbookEvents>(() => window.__afterbookEvents);
   assert.deepEqual(events.pickerOptions, { id: "afterbook-kobo", mode: "read" });
-  assert.equal(events.workerMessages[0].type, "loadSnapshot");
-  assert.deepEqual(events.workerMessages[0].paths, [
+  const loadMessage = events.workerMessages[0];
+  assert.ok(loadMessage);
+  assert.equal(loadMessage.type, "loadSnapshot");
+  assert.deepEqual(loadMessage.paths, [
     ".kobo/KoboReader.sqlite",
     ".kobo/KoboReader.sqlite-wal",
     ".kobo/KoboReader.sqlite-shm",
   ]);
-  assert.equal(events.workerMessages[1].type, "exportBook");
-  assert.equal(events.workerMessages[1].bookId, "browser-fixture-book");
-  assert.equal(events.workerMessages[1].coverPath, fixture.books[0].cover.priority_candidates[0]);
+  const exportMessage = events.workerMessages[1];
+  assert.ok(exportMessage);
+  assert.equal(exportMessage.type, "exportBook");
+  assert.equal(exportMessage.bookId, "browser-fixture-book");
+  assert.equal(exportMessage.coverPath, firstCoverPath);
 });
 
 test("explains when the File System Access API is unavailable", async ({ page }) => {
@@ -66,7 +119,7 @@ test("handles denied read permission", async ({ page }) => {
       async queryPermission() {
         return "prompt";
       },
-      async requestPermission(descriptor) {
+      async requestPermission(descriptor: ReadPermissionDescriptor) {
         if (descriptor.mode !== "read") {
           throw new Error("Afterbook requested writable access");
         }
@@ -103,7 +156,7 @@ test("handles a selected folder without the Kobo database", async ({ page }) => 
   );
 });
 
-function buildFixture() {
+function buildFixture(): BrowserFixture {
   return JSON.parse(
     execFileSync(PYTHON, ["tests/fixture_builder.py"], {
       cwd: WEB_ROOT,
@@ -112,14 +165,14 @@ function buildFixture() {
   );
 }
 
-function resolvePython() {
+function resolvePython(): string {
   const candidates = [
     process.env.AFTERBOOK_PYTHON,
     process.env.PYTHON,
     path.join(process.env.HOME || "", ".pyenv/shims/python3"),
     "python3",
     "python",
-  ].filter(Boolean);
+  ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const candidate of candidates) {
     if (candidate.includes("/") && !existsSync(candidate)) {
@@ -138,7 +191,7 @@ function resolvePython() {
   throw new Error("Afterbook browser tests require Python 3.10 or newer.");
 }
 
-function assertValidEpub(downloadPath) {
+function assertValidEpub(downloadPath: string) {
   const output = execFileSync(
     PYTHON,
     [
@@ -165,41 +218,43 @@ print("valid")
   assert.equal(output.trim(), "valid");
 }
 
-function installFakeKoboDirectory(fixture) {
+function installFakeKoboDirectory(fixture: BrowserFixture) {
+  type FakeHandle = FakeFileHandle | FakeDirectoryHandle;
+
   class FakeFileHandle {
-    constructor(name, bytes) {
-      this.kind = "file";
-      this.name = name;
-      this.bytes = bytes;
-    }
+    readonly kind = "file";
+
+    constructor(
+      readonly name: string,
+      private readonly bytes: Uint8Array,
+    ) {}
 
     async getFile() {
-      return new File([this.bytes], this.name);
+      return new File([arrayBufferFor(this.bytes)], this.name);
     }
   }
 
   class FakeDirectoryHandle {
-    constructor(name) {
-      this.kind = "directory";
-      this.name = name;
-      this.children = new Map();
-    }
+    readonly kind = "directory";
+    readonly children = new Map<string, FakeHandle>();
 
-    async queryPermission(descriptor) {
+    constructor(readonly name: string) {}
+
+    async queryPermission(descriptor: ReadPermissionDescriptor) {
       if (descriptor.mode !== "read") {
         throw new Error("Afterbook requested writable access");
       }
       return "granted";
     }
 
-    async requestPermission(descriptor) {
+    async requestPermission(descriptor: ReadPermissionDescriptor) {
       if (descriptor.mode !== "read") {
         throw new Error("Afterbook requested writable access");
       }
       return "granted";
     }
 
-    async getDirectoryHandle(name) {
+    async getDirectoryHandle(name: string) {
       const child = this.children.get(name);
       if (!child || child.kind !== "directory") {
         throw new DOMException("Missing directory", "NotFoundError");
@@ -207,7 +262,7 @@ function installFakeKoboDirectory(fixture) {
       return child;
     }
 
-    async getFileHandle(name) {
+    async getFileHandle(name: string) {
       const child = this.children.get(name);
       if (!child || child.kind !== "file") {
         throw new DOMException("Missing file", "NotFoundError");
@@ -221,23 +276,33 @@ function installFakeKoboDirectory(fixture) {
       }
     }
 
-    addFile(filePath, bytes) {
+    addFile(filePath: string, bytes: Uint8Array) {
       const segments = filePath.split("/");
-      let directory = this;
+      let directory: FakeDirectoryHandle = this;
       for (const segment of segments.slice(0, -1)) {
         let child = directory.children.get(segment);
+        if (child && child.kind !== "directory") {
+          throw new Error(`Fixture path segment is not a directory: ${segment}`);
+        }
         if (!child) {
           child = new FakeDirectoryHandle(segment);
           directory.children.set(segment, child);
         }
         directory = child;
       }
-      directory.children.set(segments.at(-1), new FakeFileHandle(segments.at(-1), bytes));
+      const filename = segments.at(-1);
+      if (!filename) {
+        throw new Error("Fixture file path is empty.");
+      }
+      directory.children.set(filename, new FakeFileHandle(filename, bytes));
     }
   }
 
-  const files = new Map(
-    Object.entries(fixture.files).map(([filePath, encoded]) => [filePath, decodeBase64(encoded)]),
+  const files = new Map<string, Uint8Array>(
+    Object.entries(fixture.files).map(([filePath, encoded]) => [
+      filePath,
+      decodeBase64(encoded),
+    ]),
   );
   const root = new FakeDirectoryHandle("KOBOeReader");
   for (const [filePath, bytes] of files) {
@@ -245,53 +310,66 @@ function installFakeKoboDirectory(fixture) {
   }
 
   window.__afterbookEvents = { pickerOptions: null, workerMessages: [] };
-  window.showDirectoryPicker = async (options) => {
+  window.showDirectoryPicker = async (options: PickerOptions) => {
     window.__afterbookEvents.pickerOptions = options;
     return root;
   };
   const NativeWorker = window.Worker;
-  window.Worker = class LoggedWorker {
-    constructor(url, options) {
+  class LoggedWorker {
+    private readonly worker: Worker;
+
+    constructor(url: string | URL, options?: WorkerOptions) {
       this.worker = new NativeWorker(url, options);
     }
 
-    addEventListener(...args) {
+    addEventListener(...args: Parameters<Worker["addEventListener"]>) {
       return this.worker.addEventListener(...args);
     }
 
-    removeEventListener(...args) {
+    removeEventListener(...args: Parameters<Worker["removeEventListener"]>) {
       return this.worker.removeEventListener(...args);
     }
 
-    postMessage(message, transfer) {
-      const payload = message.payload || {};
-      if (message.type === "loadSnapshot") {
+    postMessage(message: unknown, transfer?: Transferable[]) {
+      const loggedMessage = message as WorkerRequestLogMessage;
+      const payload = loggedMessage.payload || {};
+      if (loggedMessage.type === "loadSnapshot" && Array.isArray(payload.files)) {
         window.__afterbookEvents.workerMessages.push({
-          type: message.type,
+          type: "loadSnapshot",
           paths: payload.files.map((file) => file.path),
         });
       }
-      if (message.type === "exportBook") {
+      if (loggedMessage.type === "exportBook") {
         window.__afterbookEvents.workerMessages.push({
-          type: message.type,
-          bookId: payload.bookId,
+          type: "exportBook",
+          bookId: payload.bookId || "",
           coverPath: payload.coverFile?.path || null,
         });
       }
-      return this.worker.postMessage(message, transfer);
+      if (transfer) {
+        return this.worker.postMessage(message, transfer);
+      }
+      return this.worker.postMessage(message);
     }
 
     terminate() {
       return this.worker.terminate();
     }
-  };
+  }
+  window.Worker = LoggedWorker as unknown as typeof Worker;
 
-  function decodeBase64(encoded) {
+  function decodeBase64(encoded: string): Uint8Array {
     const binary = atob(encoded);
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) {
       bytes[index] = binary.charCodeAt(index);
     }
     return bytes;
+  }
+
+  function arrayBufferFor(bytes: Uint8Array): ArrayBuffer {
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    return copy.buffer;
   }
 }

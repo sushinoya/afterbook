@@ -217,6 +217,7 @@ Run the browser app checks:
 cd web
 npm install
 npm run build
+npm run typecheck
 npm run test:unit
 npm run test:browser
 ```

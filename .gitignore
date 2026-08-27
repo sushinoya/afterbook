@@ -12,6 +12,9 @@ dist/
 htmlcov/
 .DS_Store
 *.epub
-web/node_modules/
+node_modules/
+test-results/
+playwright-report/
+web/dist/
+web/dist-tests/
 web/python/
-web/test-results/

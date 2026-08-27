@@ -47,19 +47,25 @@ never calls File System Access APIs with `{ create: true }`.
 - `afterbook/epub.py` exposes byte generation while preserving atomic CLI writes.
 - `afterbook/readers/kobo/cover.py` owns Kobo cover-cache hashing and locator
   construction.
-- `web/kobo-files.js` owns File System Access validation and local file reads.
-- `web/worker-client.js` owns the request/response protocol with the worker.
-- `web/pyodide-worker.js` owns Pyodide initialization and the staged `/kobo`
+- `web/src/kobo-files.ts` owns File System Access validation and local file
+  reads.
+- `web/src/worker-client.ts` owns the request/response protocol with the
+  worker.
+- `web/src/pyodide-worker.ts` owns Pyodide initialization and the staged `/kobo`
   filesystem.
-- `web/app.js` owns UI state, rendering, cover preview URLs, and EPUB downloads.
+- `web/src/app.ts` owns UI state, rendering, cover preview URLs, and EPUB
+  downloads.
+- `web/src/constants.ts` owns shared browser strings, DOM ids, worker protocol
+  names, and bridge constants used across modules.
 
 Keep these boundaries intact when extending the app. In particular, avoid
-duplicating Kobo database or EPUB logic in JavaScript.
+duplicating Kobo database or EPUB logic in TypeScript.
 
 ## Build And Deploy
 
-The browser build packages the local Python source into
-`web/python/afterbook.zip`; that generated directory is ignored by Git.
+The browser build compiles TypeScript source into `web/dist` and packages the
+local Python source into `web/python/afterbook.zip`; both generated directories
+are ignored by Git.
 
 ```console
 cd web
@@ -86,6 +92,7 @@ Run the browser checks from `web` with Node 20 or newer:
 
 ```console
 npm run build
+npm run typecheck
 npm run test:unit
 npm run test:browser
 ```
