@@ -59,7 +59,9 @@ button:disabled {
 .welcome-screen {
   min-height: 100vh;
   display: grid;
+  grid-template-rows: 1fr auto;
   align-items: center;
+  gap: 28px;
   padding: clamp(24px, 5vw, 72px);
   background:
     linear-gradient(180deg, rgb(255 253 248 / 0.86), rgb(244 245 240 / 0.96)),
@@ -203,6 +205,40 @@ button:disabled {
   padding: 34px 0 60px;
   display: grid;
   gap: 34px;
+}
+
+.github-footer {
+  width: min(1180px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 0 0 28px;
+  display: flex;
+  justify-content: center;
+}
+
+.welcome-screen .github-footer {
+  width: 100%;
+  padding-bottom: 0;
+}
+
+.github-star-link {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(255 253 248 / 0.82);
+  color: var(--ink);
+  box-shadow: 0 10px 24px rgb(31 37 30 / 0.08);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.github-star-link:hover {
+  border-color: var(--gold);
+  color: var(--sage-dark);
 }
 
 .connection-wizard,

@@ -10,6 +10,7 @@ import {
   Lock,
   PlugZap,
   ShieldCheck,
+  Star,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -20,6 +21,8 @@ import {
   useAnnotationExport,
 } from "../features/annotation-export/use-annotation-export.js";
 import { createReaderRegistry } from "../infrastructure/readers/reader-registry.js";
+
+const GITHUB_REPOSITORY_URL = "https://github.com/sushinoya/afterbook";
 
 export function AppView() {
   const readers = useMemo(() => createReaderRegistry(), []);
@@ -59,6 +62,7 @@ export function AppView() {
           />
         )}
       </main>
+      <GitHubFooter />
 
       {model.selectedBook ? (
         <BookPreviewModal
@@ -96,7 +100,24 @@ function WelcomeScreen({ onStart }: { onStart(): void }) {
           </div>
         </div>
       </section>
+      <GitHubFooter />
     </main>
+  );
+}
+
+function GitHubFooter() {
+  return (
+    <footer className="github-footer">
+      <a
+        className="github-star-link"
+        href={GITHUB_REPOSITORY_URL}
+        target="_blank"
+        rel="noreferrer"
+      >
+        <span>Star AfterBook on GitHub</span>
+        <Star size={15} aria-hidden="true" />
+      </a>
+    </footer>
   );
 }
 
