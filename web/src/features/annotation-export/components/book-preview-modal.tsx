@@ -9,6 +9,7 @@ import {
 import HTMLFlipBook from "react-pageflip";
 import {
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -26,7 +27,7 @@ import {
   type EpubPreviewPage,
 } from "../epub-preview.js";
 
-const PAGE_FLIP_DURATION_MS = 320;
+const PAGE_FLIP_DURATION_MS = 520;
 const PAGE_DRAG_EDGE_RATIO = 0.16;
 const PAGE_DRAG_EDGE_MIN_PX = 42;
 const PAGE_DRAG_EDGE_MAX_PX = 82;
@@ -229,6 +230,7 @@ function EpubBookReader({
   const canTurnForward = isReaderIdle && currentPageIndex < renderedPages.length - 2;
   const progressStart = Math.min(currentPageIndex + 1, pageCount);
   const progressEnd = Math.min(currentPageIndex + 2, pageCount);
+  const flipBookKey = `${book.id}:${epub?.filename || ""}:${epub?.data.byteLength || 0}:${bookSize?.pageWidth || 0}x${bookSize?.pageHeight || 0}`;
 
   const guardState = useRef({
     currentPageIndex,
@@ -392,46 +394,15 @@ function EpubBookReader({
         ref={bookStage}
       >
         {bookSize ? (
-          <HTMLFlipBookView
-            key={`${book.id}:${epub?.filename || ""}:${epub?.data.byteLength || 0}:${bookSize.pageWidth}x${bookSize.pageHeight}`}
+          <FlipBookSurface
+            bookKey={flipBookKey}
             ref={flipBook}
-            className="page-flip-book"
-            style={{ height: "100%", width: "100%" }}
-            width={bookSize.pageWidth}
-            height={bookSize.pageHeight}
-            size="fixed"
-            minWidth={bookSize.pageWidth}
-            maxWidth={bookSize.pageWidth}
-            minHeight={bookSize.pageHeight}
-            maxHeight={bookSize.pageHeight}
-            drawShadow={true}
-            flippingTime={PAGE_FLIP_DURATION_MS}
-            usePortrait={false}
-            startPage={0}
-            startZIndex={1}
-            autoSize={false}
-            maxShadowOpacity={0.36}
-            showCover={false}
-            mobileScrollSupport={true}
-            clickEventForward={true}
-            useMouseEvents={true}
-            swipeDistance={24}
-            showPageCorners={false}
-            disableFlipByClick={true}
-            renderOnlyPageLengthChange={true}
+            pages={renderedPages}
+            size={bookSize}
             onFlip={handleFlip}
-            onChangeState={handleReaderStateChange}
             onInit={handleReaderInit}
-            onUpdate={handleReaderInit}
-          >
-            {renderedPages.map((page, index) => (
-              <ReaderPageView
-                key={page.id}
-                page={page}
-                side={index % 2 === 0 ? "left" : "right"}
-              />
-            ))}
-          </HTMLFlipBookView>
+            onReaderStateChange={handleReaderStateChange}
+          />
         ) : null}
       </div>
       <button
@@ -457,6 +428,67 @@ interface BookSize {
   pageWidth: number;
 }
 
+interface FlipBookSurfaceProps {
+  bookKey: string;
+  pages: readonly RenderablePage[];
+  size: BookSize;
+  onFlip(event: PageFlipEvent): void;
+  onInit(event: PageFlipEvent): void;
+  onReaderStateChange(event: PageFlipEvent): void;
+}
+
+const FLIP_BOOK_STYLE: CSSProperties = { height: "100%", width: "100%" };
+
+const FlipBookSurface = memo(
+  forwardRef<HtmlFlipBookHandle, FlipBookSurfaceProps>(function FlipBookSurface(
+    { bookKey, pages, size, onFlip, onInit, onReaderStateChange },
+    ref,
+  ) {
+    return (
+      <HTMLFlipBookView
+        key={bookKey}
+        ref={ref}
+        className="page-flip-book"
+        style={FLIP_BOOK_STYLE}
+        width={size.pageWidth}
+        height={size.pageHeight}
+        size="fixed"
+        minWidth={size.pageWidth}
+        maxWidth={size.pageWidth}
+        minHeight={size.pageHeight}
+        maxHeight={size.pageHeight}
+        drawShadow={true}
+        flippingTime={PAGE_FLIP_DURATION_MS}
+        usePortrait={false}
+        startPage={0}
+        startZIndex={1}
+        autoSize={false}
+        maxShadowOpacity={0.36}
+        showCover={false}
+        mobileScrollSupport={true}
+        clickEventForward={true}
+        useMouseEvents={true}
+        swipeDistance={24}
+        showPageCorners={false}
+        disableFlipByClick={true}
+        renderOnlyPageLengthChange={true}
+        onFlip={onFlip}
+        onChangeState={onReaderStateChange}
+        onInit={onInit}
+        onUpdate={onInit}
+      >
+        {pages.map((page, index) => (
+          <ReaderPageView
+            key={page.id}
+            page={page}
+            side={index % 2 === 0 ? "left" : "right"}
+          />
+        ))}
+      </HTMLFlipBookView>
+    );
+  }),
+);
+
 interface RenderablePage {
   bodyHtml: string;
   coverImageSource: string | null;
@@ -475,7 +507,6 @@ const ReaderPageView = forwardRef<HTMLElement, ReaderPageViewProps>(
   function ReaderPageView({ page, side }, ref) {
     const className = [
       "reader-page",
-      "--simple",
       side,
       page.kind === "blank" ? "blank" : "",
     ]

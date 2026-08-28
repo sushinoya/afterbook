@@ -217,13 +217,18 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     assert.equal(draggingForward.hasCustomFlipOverlay, false, "custom page-turn overlays must not render");
     assert.equal(draggingForward.hasCustomSpread, false, "custom spread transitions must not render");
     assert.deepEqual(
+      draggingForward.escapedPages,
+      [],
+      "dragging forward must not show duplicate pages outside the book",
+    );
+    assert.deepEqual(
       draggingForward.restingPages,
       [1, 2],
       "dragging forward should keep the current resting pages stable",
     );
     assert.ok(
-      draggingForward.durationMs <= 500,
-      "page turn animation should feel responsive, not slow",
+      draggingForward.durationMs >= 450 && draggingForward.durationMs <= 650,
+      "page turn animation should feel deliberate without becoming slow",
     );
     assert.ok(draggingForward.page3Content, "forward flip should include page 3 content");
     assert.equal(draggingForward.page3Content.contentTransform, "none", "page 3 content must not be directly transformed");
@@ -272,6 +277,11 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     assert.equal(draggingBackward.state, "user_fold", "backward dragging should be handled by the page flip library");
     assert.equal(draggingBackward.hasLibraryShadow, true, "library should draw turn shadows while dragging backward");
     assert.equal(draggingBackward.hasCustomFlipOverlay, false, "custom page-turn overlays must not render");
+    assert.deepEqual(
+      draggingBackward.escapedPages,
+      [],
+      "dragging backward must not show duplicate pages outside the book",
+    );
     assert.deepEqual(
       draggingBackward.restingPages,
       [3, 4],
@@ -449,10 +459,30 @@ async function bookShapeMetrics(page: Page) {
           overflowY: style.overflowY,
         };
       });
+    const escapedPages =
+      stageStyle.overflow === "hidden"
+        ? []
+        : Array.from(reader.querySelectorAll(".reader-page"))
+            .filter((pageElement) => {
+              const rect = pageElement.getBoundingClientRect();
+              const style = getComputedStyle(pageElement);
+              return (
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                rect.width > 1 &&
+                rect.height > 1 &&
+                (rect.left < stageRect.left - 1 ||
+                  rect.right > stageRect.right + 1 ||
+                  rect.top < stageRect.top - 1 ||
+                  rect.bottom > stageRect.bottom + 1)
+              );
+            })
+            .map((pageElement) => Number(pageElement.getAttribute("data-page-number")));
 
     return {
       documentScrollWidth: document.documentElement.scrollWidth,
       engine: reader.getAttribute("data-reader-engine"),
+      escapedPages,
       basePages: visiblePages.map((pageMetrics) => pageMetrics.pageNumber),
       stage: {
         top: stageRect.top,
@@ -460,6 +490,7 @@ async function bookShapeMetrics(page: Page) {
         width: stageRect.width,
         height: stageRect.height,
         filter: stageStyle.filter,
+        overflow: stageStyle.overflow,
       },
       spread: {
         width: stageRect.width,
@@ -487,6 +518,8 @@ function assertBookShape(
     "book stage should leave room for its drop shadow at the bottom",
   );
   assert.notEqual(metrics.stage.filter, "none", "book should cast a drop shadow");
+  assert.equal(metrics.stage.overflow, "hidden", "book stage should clip temporary flip pages");
+  assert.deepEqual(metrics.escapedPages, [], "page flip must not leak duplicate pages outside the book");
   assert.equal(metrics.pages.length, 2, "spread should expose two resting pages");
 
   for (const pageMetrics of metrics.pages) {
@@ -507,7 +540,7 @@ function assertBookShape(
     if (pageMetrics.kind === "cover") {
       assert.equal(pageMetrics.hasPageNumber, false, "cover pages should not render a folio");
     } else if (pageMetrics.hasPageNumber) {
-      assert.equal(pageMetrics.pageNumberPosition, "static", "page number should be in normal layout flow");
+      assert.equal(pageMetrics.pageNumberPosition, "absolute", "page number should live outside the content box");
       assert.equal(
         pageMetrics.pageNumberOverlapsContent,
         false,
@@ -628,6 +661,9 @@ async function pageFlipInteractionMetrics(dialog: Locator) {
     const page3Content = reader.querySelector(
       '.reader-page[data-page-number="3"] .reader-page-content',
     );
+    const stage = reader.querySelector(".book-stage");
+    const stageRect = stage?.getBoundingClientRect();
+    const stageStyle = stage ? getComputedStyle(stage) : null;
     const page3Rect = page3Content?.getBoundingClientRect();
     const page3Style = page3Content ? getComputedStyle(page3Content) : null;
     const libraryShadows = Array.from(
@@ -644,6 +680,24 @@ async function pageFlipInteractionMetrics(dialog: Locator) {
         return style.display !== "none" && style.opacity !== "0";
       }),
       hasLibraryRenderBlock: reader.querySelector(".stf__block") !== null,
+      escapedPages: stageRect && stageStyle?.overflow !== "hidden"
+        ? Array.from(reader.querySelectorAll(".reader-page"))
+            .filter((pageElement) => {
+              const rect = pageElement.getBoundingClientRect();
+              const style = getComputedStyle(pageElement);
+              return (
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                rect.width > 1 &&
+                rect.height > 1 &&
+                (rect.left < stageRect.left - 1 ||
+                  rect.right > stageRect.right + 1 ||
+                  rect.top < stageRect.top - 1 ||
+                  rect.bottom > stageRect.bottom + 1)
+              );
+            })
+            .map((pageElement) => Number(pageElement.getAttribute("data-page-number")))
+        : [],
       pageIndex: Number(reader.getAttribute("data-page-index")),
       restingPages: visibleRestingPages(reader)
         .filter((pageElement) => {
