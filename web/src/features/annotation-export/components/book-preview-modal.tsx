@@ -6,9 +6,19 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import { PageFlip, type PageFlipState } from "page-flip";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import HTMLFlipBook from "react-pageflip";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+  type ReactNode,
+  type RefAttributes,
+} from "react";
 
 import type { GeneratedEpub, ReaderBook } from "../../../domain/readers.js";
 import {
@@ -16,10 +26,64 @@ import {
   type EpubPreviewPage,
 } from "../epub-preview.js";
 
-const PAGE_FLIP_DURATION_MS = 420;
+const PAGE_FLIP_DURATION_MS = 320;
 const PAGE_DRAG_EDGE_RATIO = 0.16;
 const PAGE_DRAG_EDGE_MIN_PX = 42;
 const PAGE_DRAG_EDGE_MAX_PX = 82;
+
+type PageFlipCorner = "top" | "bottom";
+type ReaderState = "user_fold" | "fold_corner" | "flipping" | "read";
+
+interface PageFlipEvent<TData = unknown> {
+  data: TData;
+}
+
+interface HtmlFlipBookController {
+  flipNext(corner?: PageFlipCorner): void;
+  flipPrev(corner?: PageFlipCorner): void;
+  getCurrentPageIndex(): number;
+  getState(): ReaderState;
+}
+
+interface HtmlFlipBookHandle {
+  pageFlip(): HtmlFlipBookController | undefined;
+}
+
+interface HtmlFlipBookProps {
+  autoSize: boolean;
+  children: ReactNode;
+  className: string;
+  clickEventForward: boolean;
+  disableFlipByClick: boolean;
+  drawShadow: boolean;
+  flippingTime: number;
+  height: number;
+  maxHeight: number;
+  maxShadowOpacity: number;
+  maxWidth: number;
+  minHeight: number;
+  minWidth: number;
+  mobileScrollSupport: boolean;
+  onChangeState?(event: PageFlipEvent): void;
+  onFlip?(event: PageFlipEvent): void;
+  onInit?(event: PageFlipEvent): void;
+  onUpdate?(event: PageFlipEvent): void;
+  renderOnlyPageLengthChange?: boolean;
+  showCover: boolean;
+  showPageCorners: boolean;
+  size: "fixed";
+  startPage: number;
+  startZIndex: number;
+  style: CSSProperties;
+  swipeDistance: number;
+  useMouseEvents: boolean;
+  usePortrait: boolean;
+  width: number;
+}
+
+const HTMLFlipBookView = HTMLFlipBook as unknown as ComponentType<
+  HtmlFlipBookProps & RefAttributes<HtmlFlipBookHandle>
+>;
 
 export function BookPreviewModal({
   book,
@@ -135,9 +199,10 @@ function EpubBookReader({
   isLoading: boolean;
 }) {
   const bookStage = useRef<HTMLDivElement>(null);
-  const pageFlip = useRef<PageFlip | null>(null);
+  const flipBook = useRef<HtmlFlipBookHandle | null>(null);
+  const [bookSize, setBookSize] = useState<BookSize | null>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
-  const [readerState, setReaderState] = useState<PageFlipState>("read");
+  const [readerState, setReaderState] = useState<ReaderState>("read");
   const previewState = useMemo(() => {
     if (!epub) {
       return { preview: null, error: null };
@@ -165,119 +230,103 @@ function EpubBookReader({
   const progressStart = Math.min(currentPageIndex + 1, pageCount);
   const progressEnd = Math.min(currentPageIndex + 2, pageCount);
 
+  const guardState = useRef({
+    currentPageIndex,
+    pageCount: renderedPages.length,
+    readerState,
+  });
+  guardState.current = {
+    currentPageIndex,
+    pageCount: renderedPages.length,
+    readerState,
+  };
+
+  useEffect(() => {
+    setCurrentPageIndex(0);
+    setReaderState("read");
+  }, [book.id, epub?.data.byteLength, epub?.filename, renderedPages.length]);
+
   useEffect(() => {
     const stage = bookStage.current;
-    if (!preview || renderedPages.length === 0 || !stage) {
+    if (!preview || !stage) {
       return undefined;
     }
 
-    let lastSizeKey = "";
     let animationFrame = 0;
-    let isDisposed = false;
 
-    const destroyBook = () => {
-      if (pageFlip.current) {
-        pageFlip.current.destroy();
-        pageFlip.current = null;
-      }
-      stage.replaceChildren();
-    };
-
-    const mountBook = () => {
-      if (isDisposed) {
-        return;
-      }
-
-      const rect = stage.getBoundingClientRect();
-      const pageWidth = Math.floor(rect.width / 2);
-      const pageHeight = Math.floor(rect.height);
-      if (pageWidth <= 0 || pageHeight <= 0) {
-        return;
-      }
-
-      const sizeKey = `${pageWidth}x${pageHeight}`;
-      if (sizeKey === lastSizeKey && pageFlip.current) {
-        pageFlip.current.update();
-        return;
-      }
-      lastSizeKey = sizeKey;
-
-      destroyBook();
-      setCurrentPageIndex(0);
-      setReaderState("read");
-
-      const host = document.createElement("div");
-      host.className = "page-flip-book";
-      stage.append(host);
-      installPageDragStartGuard(host, {
-        getCurrentPageIndex: () => pageFlip.current?.getCurrentPageIndex() || 0,
-        getReaderState: () => pageFlip.current?.getState() || "read",
-        pageCount: renderedPages.length,
-      });
-
-      const instance = new PageFlip(host, {
-        autoSize: false,
-        clickEventForward: true,
-        disableFlipByClick: true,
-        drawShadow: true,
-        flippingTime: PAGE_FLIP_DURATION_MS,
-        height: pageHeight,
-        maxShadowOpacity: 0.36,
-        mobileScrollSupport: true,
-        showCover: false,
-        showPageCorners: false,
-        size: "fixed",
-        startPage: 0,
-        startZIndex: 1,
-        swipeDistance: 24,
-        useMouseEvents: true,
-        usePortrait: false,
-        width: pageWidth,
-      });
-      pageFlip.current = instance;
-
-      instance.on("flip", (event) => {
-        setCurrentPageIndex(normalizePageIndex(event.data, pageCount));
-      });
-      instance.on("changeState", (event) => {
-        setReaderState(normalizePageFlipState(event.data));
-      });
-      instance.on("init", (event) => {
-        if (isPageFlipInitEvent(event.data)) {
-          setCurrentPageIndex(normalizePageIndex(event.data.page, pageCount));
-        }
-      });
-      instance.loadFromHTML(buildPageFlipElements(renderedPages));
-    };
-
-    const scheduleMount = () => {
+    const measureBook = () => {
       window.cancelAnimationFrame(animationFrame);
-      animationFrame = window.requestAnimationFrame(mountBook);
+      animationFrame = window.requestAnimationFrame(() => {
+        const rect = stage.getBoundingClientRect();
+        const pageWidth = Math.floor(rect.width / 2);
+        const pageHeight = Math.floor(rect.height);
+        if (pageWidth <= 0 || pageHeight <= 0) {
+          return;
+        }
+        setBookSize((current) => {
+          if (current?.pageWidth === pageWidth && current.pageHeight === pageHeight) {
+            return current;
+          }
+          return { pageHeight, pageWidth };
+        });
+      });
     };
 
-    const resizeObserver = new ResizeObserver(scheduleMount);
+    const resizeObserver = new ResizeObserver(measureBook);
     resizeObserver.observe(stage);
-    scheduleMount();
+    measureBook();
 
     return () => {
-      isDisposed = true;
       window.cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
-      destroyBook();
     };
-  }, [pageCount, preview, renderedPages]);
+  }, [preview, renderedPages.length]);
+
+  useEffect(() => {
+    const stage = bookStage.current;
+    if (!preview || !stage) {
+      return undefined;
+    }
+
+    return installPageDragStartGuard(stage, {
+      getCurrentPageIndex: () => guardState.current.currentPageIndex,
+      getReaderState: () => guardState.current.readerState,
+      pageCount: renderedPages.length,
+    });
+  }, [preview, renderedPages.length]);
 
   const flipToPreviousPage = useCallback(() => {
     if (canTurnBack) {
-      pageFlip.current?.flipPrev("top");
+      flipBook.current?.pageFlip()?.flipPrev("top");
     }
   }, [canTurnBack]);
 
   const flipToNextPage = useCallback(() => {
     if (canTurnForward) {
-      pageFlip.current?.flipNext("top");
+      flipBook.current?.pageFlip()?.flipNext("top");
     }
   }, [canTurnForward]);
+
+  const handleFlip = useCallback(
+    (event: PageFlipEvent) => {
+      setCurrentPageIndex(normalizePageIndex(event.data, renderedPages.length));
+    },
+    [renderedPages.length],
+  );
+
+  const handleReaderStateChange = useCallback((event: PageFlipEvent) => {
+    setReaderState(normalizeReaderState(event.data));
+  }, []);
+
+  const handleReaderInit = useCallback(
+    (event: PageFlipEvent) => {
+      if (isPageFlipInitEvent(event.data)) {
+        setCurrentPageIndex(normalizePageIndex(event.data.page, renderedPages.length));
+      }
+      setReaderState("read");
+    },
+    [renderedPages.length],
+  );
 
   useEffect(() => {
     function handleKeyDown(event: globalThis.KeyboardEvent) {
@@ -317,7 +366,7 @@ function EpubBookReader({
   return (
     <div
       className="open-book-reader"
-      data-reader-engine="st-page-flip"
+      data-reader-engine="react-pageflip"
       data-reader-state={readerState}
       data-page-index={currentPageIndex}
       style={
@@ -338,10 +387,53 @@ function EpubBookReader({
       </button>
       <div
         className="book-stage"
-        data-page-flip-library="st-page-flip"
+        data-page-flip-library="react-pageflip"
         aria-label={`${preview.title} EPUB preview, ${spreadCount} spreads`}
         ref={bookStage}
-      />
+      >
+        {bookSize ? (
+          <HTMLFlipBookView
+            key={`${book.id}:${epub?.filename || ""}:${epub?.data.byteLength || 0}:${bookSize.pageWidth}x${bookSize.pageHeight}`}
+            ref={flipBook}
+            className="page-flip-book"
+            style={{ height: "100%", width: "100%" }}
+            width={bookSize.pageWidth}
+            height={bookSize.pageHeight}
+            size="fixed"
+            minWidth={bookSize.pageWidth}
+            maxWidth={bookSize.pageWidth}
+            minHeight={bookSize.pageHeight}
+            maxHeight={bookSize.pageHeight}
+            drawShadow={true}
+            flippingTime={PAGE_FLIP_DURATION_MS}
+            usePortrait={false}
+            startPage={0}
+            startZIndex={1}
+            autoSize={false}
+            maxShadowOpacity={0.36}
+            showCover={false}
+            mobileScrollSupport={true}
+            clickEventForward={true}
+            useMouseEvents={true}
+            swipeDistance={24}
+            showPageCorners={false}
+            disableFlipByClick={true}
+            renderOnlyPageLengthChange={true}
+            onFlip={handleFlip}
+            onChangeState={handleReaderStateChange}
+            onInit={handleReaderInit}
+            onUpdate={handleReaderInit}
+          >
+            {renderedPages.map((page, index) => (
+              <ReaderPageView
+                key={page.id}
+                page={page}
+                side={index % 2 === 0 ? "left" : "right"}
+              />
+            ))}
+          </HTMLFlipBookView>
+        ) : null}
+      </div>
       <button
         className="spread-turn next"
         type="button"
@@ -360,22 +452,88 @@ function EpubBookReader({
   );
 }
 
+interface BookSize {
+  pageHeight: number;
+  pageWidth: number;
+}
+
 interface RenderablePage {
   bodyHtml: string;
+  coverImageSource: string | null;
   id: string;
   kind: EpubPreviewPage["kind"] | "blank";
   pageNumber: number;
   title: string;
 }
 
+interface ReaderPageViewProps {
+  page: RenderablePage;
+  side: "left" | "right";
+}
+
+const ReaderPageView = forwardRef<HTMLElement, ReaderPageViewProps>(
+  function ReaderPageView({ page, side }, ref) {
+    const className = [
+      "reader-page",
+      "--simple",
+      side,
+      page.kind === "blank" ? "blank" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    if (page.kind === "blank") {
+      return (
+        <article
+          className={className}
+          data-kind={page.kind}
+          data-page-number={page.pageNumber}
+          ref={ref}
+          aria-hidden="true"
+        />
+      );
+    }
+
+    return (
+      <article
+        className={className}
+        data-kind={page.kind}
+        data-page-number={page.pageNumber}
+        ref={ref}
+        aria-label={`${page.title}, page ${page.pageNumber}`}
+        role="document"
+      >
+        <div className="reader-page-content">
+          {page.kind === "cover" && page.coverImageSource ? (
+            <img
+              alt={page.title === "Cover" ? "Book cover" : `${page.title} cover`}
+              className="cover-art"
+              decoding="async"
+              draggable={false}
+              src={page.coverImageSource}
+            />
+          ) : (
+            <div dangerouslySetInnerHTML={{ __html: page.bodyHtml }} />
+          )}
+        </div>
+        {page.kind !== "cover" ? (
+          <span className="book-page-number">{page.pageNumber}</span>
+        ) : null}
+      </article>
+    );
+  },
+);
+
 function createRenderablePages(pages: readonly EpubPreviewPage[]): RenderablePage[] {
   const rendered: RenderablePage[] = pages.map((page, index) => ({
     ...page,
+    coverImageSource: page.kind === "cover" ? coverImageSourceFromHtml(page.bodyHtml) : null,
     pageNumber: index + 1,
   }));
   if (rendered.length % 2 === 1) {
     rendered.push({
       bodyHtml: "",
+      coverImageSource: null,
       id: "__blank-final-page",
       kind: "blank",
       pageNumber: rendered.length + 1,
@@ -385,57 +543,17 @@ function createRenderablePages(pages: readonly EpubPreviewPage[]): RenderablePag
   return rendered;
 }
 
-function buildPageFlipElements(pages: readonly RenderablePage[]): HTMLElement[] {
-  return pages.map((page) => {
-    const element = document.createElement("article");
-    element.className = `reader-page${page.kind === "blank" ? " blank" : ""}`;
-    element.dataset.kind = page.kind;
-    element.dataset.pageNumber = String(page.pageNumber);
-    element.dataset.pageFlipPage = "";
-
-    if (page.kind === "blank") {
-      element.setAttribute("aria-hidden", "true");
-      return element;
-    }
-
-    element.setAttribute("aria-label", `${page.title}, page ${page.pageNumber}`);
-    element.setAttribute("role", "document");
-
-    const content = document.createElement("div");
-    content.className = "reader-page-content";
-    content.innerHTML = page.bodyHtml;
-    if (page.kind === "cover") {
-      normalizeCoverPageContent(content, page.title);
-    }
-    element.append(content);
-
-    if (page.kind !== "cover") {
-      const pageNumber = document.createElement("span");
-      pageNumber.className = "book-page-number";
-      pageNumber.textContent = String(page.pageNumber);
-      element.append(pageNumber);
-    }
-
-    return element;
-  });
-}
-
-function normalizeCoverPageContent(content: HTMLElement, title: string) {
-  const source = coverImageSource(content);
-  if (!source) {
-    return;
+function coverImageSourceFromHtml(html: string): string | null {
+  if (typeof document === "undefined") {
+    return null;
   }
 
-  const image = document.createElement("img");
-  image.alt = title === "Cover" ? "Book cover" : `${title} cover`;
-  image.className = "cover-art";
-  image.decoding = "async";
-  image.draggable = false;
-  image.src = source;
-  content.replaceChildren(image);
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  return coverImageSource(template.content);
 }
 
-function coverImageSource(content: HTMLElement): string | null {
+function coverImageSource(content: ParentNode): string | null {
   const candidates: string[] = [];
   const image = content.querySelector("img");
   const directSource = image?.getAttribute("src");
@@ -470,7 +588,7 @@ function installPageDragStartGuard(
   host: HTMLElement,
   options: {
     getCurrentPageIndex(): number;
-    getReaderState(): PageFlipState;
+    getReaderState(): ReaderState;
     pageCount: number;
   },
 ) {
@@ -485,6 +603,11 @@ function installPageDragStartGuard(
 
   host.addEventListener("mousedown", guardDragStart, { capture: true });
   host.addEventListener("touchstart", guardDragStart, { capture: true });
+
+  return () => {
+    host.removeEventListener("mousedown", guardDragStart, { capture: true });
+    host.removeEventListener("touchstart", guardDragStart, { capture: true });
+  };
 }
 
 function pointerStartPoint(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
@@ -500,7 +623,7 @@ function isAllowedPageDragStart(
   point: { x: number; y: number },
   options: {
     getCurrentPageIndex(): number;
-    getReaderState(): PageFlipState;
+    getReaderState(): ReaderState;
     pageCount: number;
   },
 ) {
@@ -528,7 +651,7 @@ function isAllowedPageDragStart(
   return (canTurnBack && localX <= dragEdgeWidth) || (canTurnForward && localX >= rect.width - dragEdgeWidth);
 }
 
-function normalizePageFlipState(value: unknown): PageFlipState {
+function normalizeReaderState(value: unknown): ReaderState {
   if (
     value === "read" ||
     value === "user_fold" ||

@@ -99,7 +99,7 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   await fixtureBook.click();
   const dialog = page.getByRole("dialog", { name: "Browser Fixture" });
   await expect(dialog).toBeVisible({ timeout: 60_000 });
-  await expect(dialog.locator('.open-book-reader[data-reader-engine="st-page-flip"]')).toBeVisible();
+  await expect(dialog.locator('.open-book-reader[data-reader-engine="react-pageflip"]')).toBeVisible();
   await expect(dialog.getByText(/Pages 1-2 of \d+/)).toBeVisible();
   await dialog.getByRole("button", { name: "Next page", exact: true }).click();
   await expect(dialog.locator('.open-book-reader[data-reader-state="read"][data-page-index="2"]')).toBeVisible({
@@ -186,7 +186,7 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     assert.equal(
       await dialog.locator(".stf__block").count(),
       1,
-      "StPageFlip should own the book interaction surface",
+      "the page flip library should own the book interaction surface",
     );
 
     const fontSizeBefore = await visibleReaderTypeMetrics(dialog);
@@ -211,8 +211,8 @@ test("renders the EPUB preview as an open book across landscape screens", async 
 
     await pullTopRightPageCorner(page, dialog);
     const draggingForward = await pageFlipInteractionMetrics(dialog);
-    assert.equal(draggingForward.state, "user_fold", "dragging should be handled by StPageFlip");
-    assert.equal(draggingForward.hasStPageFlipBlock, true, "library render block should be mounted");
+    assert.equal(draggingForward.state, "user_fold", "dragging should be handled by the page flip library");
+    assert.equal(draggingForward.hasLibraryRenderBlock, true, "library render block should be mounted");
     assert.equal(draggingForward.hasLibraryShadow, true, "library should draw turn shadows while dragging");
     assert.equal(draggingForward.hasCustomFlipOverlay, false, "custom page-turn overlays must not render");
     assert.equal(draggingForward.hasCustomSpread, false, "custom spread transitions must not render");
@@ -269,7 +269,7 @@ test("renders the EPUB preview as an open book across landscape screens", async 
 
     await pullTopLeftPageCorner(page, dialog);
     const draggingBackward = await pageFlipInteractionMetrics(dialog);
-    assert.equal(draggingBackward.state, "user_fold", "backward dragging should be handled by StPageFlip");
+    assert.equal(draggingBackward.state, "user_fold", "backward dragging should be handled by the page flip library");
     assert.equal(draggingBackward.hasLibraryShadow, true, "library should draw turn shadows while dragging backward");
     assert.equal(draggingBackward.hasCustomFlipOverlay, false, "custom page-turn overlays must not render");
     assert.deepEqual(
@@ -369,7 +369,7 @@ async function bookShapeMetrics(page: Page) {
     const stage = reader.querySelector(".book-stage");
     const flipBlock = reader.querySelector(".stf__block");
     if (!stage || !flipBlock) {
-      throw new Error("Expected StPageFlip DOM to be mounted.");
+      throw new Error("Expected page flip library DOM to be mounted.");
     }
     const stageRect = stage.getBoundingClientRect();
     const stageStyle = getComputedStyle(stage);
@@ -468,7 +468,7 @@ function assertBookShape(
     metrics.documentScrollWidth <= viewport.width + 1,
     "modal must not create horizontal overflow",
   );
-  assert.equal(metrics.engine, "st-page-flip", "reader should use the StPageFlip engine");
+  assert.equal(metrics.engine, "react-pageflip", "reader should use the React page flip wrapper");
   assert.ok(metrics.spread.width > metrics.spread.height * 1.28, "spread should read as an open book");
   assert.ok(metrics.spread.width < metrics.spread.height * 1.42, "spread proportions should stay book-like");
   assert.ok(metrics.stage.height > viewport.height * 0.52, "book should be large enough for the viewport");
@@ -633,7 +633,7 @@ async function pageFlipInteractionMetrics(dialog: Locator) {
         const style = getComputedStyle(element);
         return style.display !== "none" && style.opacity !== "0";
       }),
-      hasStPageFlipBlock: reader.querySelector(".stf__block") !== null,
+      hasLibraryRenderBlock: reader.querySelector(".stf__block") !== null,
       pageIndex: Number(reader.getAttribute("data-page-index")),
       restingPages: Array.from(reader.querySelectorAll(".reader-page.--simple"))
         .filter((pageElement) => {
