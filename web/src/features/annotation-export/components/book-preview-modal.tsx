@@ -6,12 +6,9 @@ import {
   Loader2,
   X,
 } from "lucide-react";
+import { PageFlip, type PageFlipState } from "page-flip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  CSSProperties,
-  KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
-} from "react";
+import type { CSSProperties } from "react";
 
 import type { GeneratedEpub, ReaderBook } from "../../../domain/readers.js";
 import {
@@ -19,9 +16,7 @@ import {
   type EpubPreviewPage,
 } from "../epub-preview.js";
 
-const SPREAD_TRANSITION_MS = 280;
-const TURN_DRAG_DISTANCE = 38;
-const TURN_COMPLETE_THRESHOLD = 0.34;
+const PAGE_FLIP_DURATION_MS = 420;
 
 export function BookPreviewModal({
   book,
@@ -136,17 +131,10 @@ function EpubBookReader({
   fontScale: number;
   isLoading: boolean;
 }) {
-  const transitionTimeout = useRef<number | null>(null);
-  const dragStart = useRef<{
-    corner: TurnCorner;
-    direction: TurnDirection;
-    pointerId: number;
-    x: number;
-    y: number;
-  } | null>(null);
-  const [spreadIndex, setSpreadIndex] = useState(0);
-  const [transition, setTransition] = useState<SpreadTransition | null>(null);
-  const [dragCue, setDragCue] = useState<ReaderDragCue | null>(null);
+  const bookStage = useRef<HTMLDivElement>(null);
+  const pageFlip = useRef<PageFlip | null>(null);
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const [readerState, setReaderState] = useState<PageFlipState>("read");
   const previewState = useMemo(() => {
     if (!epub) {
       return { preview: null, error: null };
@@ -168,200 +156,137 @@ function EpubBookReader({
     [preview],
   );
   const spreadCount = Math.max(1, Math.ceil(renderedPages.length / 2));
-  const canTurnBack = !transition && spreadIndex > 0;
-  const canTurnForward = !transition && spreadIndex < spreadCount - 1;
-  const progressStart = Math.min(spreadIndex * 2 + 1, pageCount);
-  const progressEnd = Math.min(spreadIndex * 2 + 2, pageCount);
-  const currentSpread = getSpread(renderedPages, spreadIndex);
-  const targetSpread = transition ? getSpread(renderedPages, transition.toSpread) : null;
-  const readerState = transition ? "transitioning" : dragCue ? "dragging" : "read";
+  const isReaderIdle = readerState === "read";
+  const canTurnBack = isReaderIdle && currentPageIndex > 0;
+  const canTurnForward = isReaderIdle && currentPageIndex < renderedPages.length - 2;
+  const progressStart = Math.min(currentPageIndex + 1, pageCount);
+  const progressEnd = Math.min(currentPageIndex + 2, pageCount);
 
   useEffect(() => {
-    setSpreadIndex(0);
-    setTransition(null);
-    setDragCue(null);
-    if (transitionTimeout.current) {
-      window.clearTimeout(transitionTimeout.current);
-      transitionTimeout.current = null;
-    }
-  }, [book.id, epub]);
-
-  useEffect(() => {
-    return () => {
-      if (transitionTimeout.current) {
-        window.clearTimeout(transitionTimeout.current);
-        transitionTimeout.current = null;
-      }
-    };
-  }, []);
-
-  const animateToSpread = useCallback(
-    (
-      direction: TurnDirection,
-      options: { corner?: TurnCorner; startProgress?: number } = {},
-    ) => {
-      const toSpread = direction === "forward" ? spreadIndex + 1 : spreadIndex - 1;
-      if (!preview || transition || toSpread < 0 || toSpread >= spreadCount) {
-        return;
-      }
-
-      if (transitionTimeout.current) {
-        window.clearTimeout(transitionTimeout.current);
-      }
-
-      const nextTransition = createSpreadTransition({
-        corner: options.corner || "top",
-        direction,
-        fromSpread: spreadIndex,
-        startProgress: options.startProgress || 0,
-        toSpread,
-      });
-      setDragCue(null);
-      setTransition(nextTransition);
-      transitionTimeout.current = window.setTimeout(() => {
-        setSpreadIndex(toSpread);
-        setTransition(null);
-        transitionTimeout.current = null;
-      }, SPREAD_TRANSITION_MS);
-    },
-    [preview, spreadCount, spreadIndex, transition],
-  );
-
-  useEffect(() => {
-    if (!preview || spreadCount <= 1) {
+    const stage = bookStage.current;
+    if (!preview || renderedPages.length === 0 || !stage) {
       return undefined;
     }
 
+    let lastSizeKey = "";
+    let animationFrame = 0;
+    let isDisposed = false;
+
+    const destroyBook = () => {
+      if (pageFlip.current) {
+        pageFlip.current.destroy();
+        pageFlip.current = null;
+      }
+      stage.replaceChildren();
+    };
+
+    const mountBook = () => {
+      if (isDisposed) {
+        return;
+      }
+
+      const rect = stage.getBoundingClientRect();
+      const pageWidth = Math.floor(rect.width / 2);
+      const pageHeight = Math.floor(rect.height);
+      if (pageWidth <= 0 || pageHeight <= 0) {
+        return;
+      }
+
+      const sizeKey = `${pageWidth}x${pageHeight}`;
+      if (sizeKey === lastSizeKey && pageFlip.current) {
+        pageFlip.current.update();
+        return;
+      }
+      lastSizeKey = sizeKey;
+
+      destroyBook();
+      setCurrentPageIndex(0);
+      setReaderState("read");
+
+      const host = document.createElement("div");
+      host.className = "page-flip-book";
+      stage.append(host);
+
+      const instance = new PageFlip(host, {
+        autoSize: false,
+        clickEventForward: true,
+        disableFlipByClick: false,
+        drawShadow: true,
+        flippingTime: PAGE_FLIP_DURATION_MS,
+        height: pageHeight,
+        maxShadowOpacity: 0.36,
+        mobileScrollSupport: true,
+        showCover: false,
+        showPageCorners: false,
+        size: "fixed",
+        startPage: 0,
+        startZIndex: 1,
+        swipeDistance: 24,
+        useMouseEvents: true,
+        usePortrait: false,
+        width: pageWidth,
+      });
+      pageFlip.current = instance;
+
+      instance.on("flip", (event) => {
+        setCurrentPageIndex(normalizePageIndex(event.data, pageCount));
+      });
+      instance.on("changeState", (event) => {
+        setReaderState(normalizePageFlipState(event.data));
+      });
+      instance.on("init", (event) => {
+        if (isPageFlipInitEvent(event.data)) {
+          setCurrentPageIndex(normalizePageIndex(event.data.page, pageCount));
+        }
+      });
+      instance.loadFromHTML(buildPageFlipElements(renderedPages));
+    };
+
+    const scheduleMount = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(mountBook);
+    };
+
+    const resizeObserver = new ResizeObserver(scheduleMount);
+    resizeObserver.observe(stage);
+    scheduleMount();
+
+    return () => {
+      isDisposed = true;
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
+      destroyBook();
+    };
+  }, [pageCount, preview, renderedPages]);
+
+  const flipToPreviousPage = useCallback(() => {
+    if (canTurnBack) {
+      pageFlip.current?.flipPrev("top");
+    }
+  }, [canTurnBack]);
+
+  const flipToNextPage = useCallback(() => {
+    if (canTurnForward) {
+      pageFlip.current?.flipNext("top");
+    }
+  }, [canTurnForward]);
+
+  useEffect(() => {
     function handleKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") {
         return;
       }
       event.preventDefault();
       if (event.key === "ArrowRight") {
-        animateToSpread("forward");
+        flipToNextPage();
       } else {
-        animateToSpread("backward");
+        flipToPreviousPage();
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [animateToSpread, preview, spreadCount]);
-
-  const handleCornerPointerDown = useCallback(
-    (
-      event: ReactPointerEvent<HTMLButtonElement>,
-      direction: TurnDirection,
-      corner: TurnCorner,
-    ) => {
-      if ((event.pointerType === "mouse" && event.button !== 0) || transition) {
-        return;
-      }
-      if (direction === "forward" && !canTurnForward) {
-        return;
-      }
-      if (direction === "backward" && !canTurnBack) {
-        return;
-      }
-
-      const toSpread = direction === "forward" ? spreadIndex + 1 : spreadIndex - 1;
-      if (toSpread < 0 || toSpread >= spreadCount) {
-        return;
-      }
-
-      dragStart.current = {
-        corner,
-        direction,
-        pointerId: event.pointerId,
-        x: event.clientX,
-        y: event.clientY,
-      };
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setDragCue({ corner, direction, progress: 0 });
-    },
-    [canTurnBack, canTurnForward, spreadCount, spreadIndex, transition],
-  );
-
-  const handleCornerPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    const start = dragStart.current;
-    if (!start || start.pointerId !== event.pointerId) {
-      return;
-    }
-
-    const progress = progressForPointer(start.direction, start.x, event.clientX);
-    setDragCue({ corner: start.corner, direction: start.direction, progress });
-  }, []);
-
-  const handleCornerPointerLeave = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    const start = dragStart.current;
-    if (start?.pointerId === event.pointerId) {
-      handleCornerPointerMove(event);
-    }
-  }, [handleCornerPointerMove]);
-
-  const cancelDraggedTurn = useCallback(
-    (event: ReactPointerEvent<HTMLButtonElement>) => {
-      const start = dragStart.current;
-      if (!start || start.pointerId !== event.pointerId) {
-        return;
-      }
-
-      dragStart.current = null;
-      setDragCue(null);
-    },
-    [],
-  );
-
-  const handleCornerPointerUp = useCallback(
-    (event: ReactPointerEvent<HTMLButtonElement>) => {
-      const start = dragStart.current;
-      if (!start || start.pointerId !== event.pointerId) {
-        return;
-      }
-
-      dragStart.current = null;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-
-      const deltaX = event.clientX - start.x;
-      const deltaY = Math.abs(event.clientY - start.y);
-      const pulledForward = start.direction === "forward" && deltaX <= -TURN_DRAG_DISTANCE;
-      const pulledBackward = start.direction === "backward" && deltaX >= TURN_DRAG_DISTANCE;
-      const progress = Math.max(
-        dragCue?.progress || 0,
-        progressForPointer(start.direction, start.x, event.clientX),
-      );
-      setDragCue(null);
-      if (
-        pulledForward ||
-        pulledBackward ||
-        deltaY >= TURN_DRAG_DISTANCE * 1.4 ||
-        progress >= TURN_COMPLETE_THRESHOLD
-      ) {
-        animateToSpread(start.direction, {
-          corner: start.corner,
-          startProgress: progress,
-        });
-      }
-    },
-    [animateToSpread, dragCue],
-  );
-
-  const handleCornerPointerCancel = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    cancelDraggedTurn(event);
-  }, [cancelDraggedTurn]);
-
-  const handleCornerKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLButtonElement>, direction: TurnDirection) => {
-      if (event.key !== "Enter" && event.key !== " ") {
-        return;
-      }
-      event.preventDefault();
-      animateToSpread(direction);
-    },
-    [animateToSpread],
-  );
+  }, [flipToNextPage, flipToPreviousPage]);
 
   if (isLoading) {
     return (
@@ -384,16 +309,13 @@ function EpubBookReader({
   return (
     <div
       className="open-book-reader"
-      data-reader-engine="react-spread"
+      data-reader-engine="st-page-flip"
       data-reader-state={readerState}
-      data-spread-index={spreadIndex}
-      data-drag-direction={dragCue?.direction || undefined}
-      data-drag-progress={dragCue ? dragCue.progress.toFixed(3) : undefined}
+      data-page-index={currentPageIndex}
       style={
         {
-          "--reader-drag-shift": `${dragCue ? dragShift(dragCue) : 0}px`,
           "--reader-font-size": `${16 * fontScale}px`,
-          "--spread-transition-duration": `${SPREAD_TRANSITION_MS}ms`,
+          "--page-flip-duration": `${PAGE_FLIP_DURATION_MS}ms`,
         } as CSSProperties
       }
     >
@@ -401,101 +323,22 @@ function EpubBookReader({
         className="spread-turn previous"
         type="button"
         aria-label="Previous page"
-        onClick={() => animateToSpread("backward")}
+        onClick={flipToPreviousPage}
         disabled={!canTurnBack}
       >
         <ChevronLeft size={26} aria-hidden="true" />
       </button>
       <div
         className="book-stage"
-        data-transition-direction={transition?.direction || undefined}
+        data-page-flip-library="st-page-flip"
         aria-label={`${preview.title} EPUB preview, ${spreadCount} spreads`}
-      >
-        <div className="book-spread current" data-transition-layer="current">
-          <BookPageSurface page={currentSpread.left} side="left" />
-          <BookPageSurface page={currentSpread.right} side="right" />
-        </div>
-        {transition && targetSpread ? (
-          <div
-            className={`book-spread incoming ${transition.direction}`}
-            data-transition-layer="incoming"
-            data-transition-direction={transition.direction}
-          >
-            <BookPageSurface page={targetSpread.left} side="left" />
-            <BookPageSurface page={targetSpread.right} side="right" />
-          </div>
-        ) : null}
-        {dragCue ? (
-          <PageTurnAnimation
-            corner={dragCue.corner}
-            direction={dragCue.direction}
-            phase="dragging"
-            progress={dragCue.progress}
-          />
-        ) : null}
-        {transition ? (
-          <PageTurnAnimation
-            key={transition.key}
-            corner={transition.corner}
-            direction={transition.direction}
-            phase="settling"
-            progress={transition.startProgress}
-          />
-        ) : null}
-        <button
-          className="page-corner forward top"
-          type="button"
-          aria-label="Top forward page corner"
-          disabled={!canTurnForward}
-          onPointerDown={(event) => handleCornerPointerDown(event, "forward", "top")}
-          onPointerMove={handleCornerPointerMove}
-          onPointerLeave={handleCornerPointerLeave}
-          onPointerUp={handleCornerPointerUp}
-          onPointerCancel={handleCornerPointerCancel}
-          onKeyDown={(event) => handleCornerKeyDown(event, "forward")}
-        />
-        <button
-          className="page-corner forward bottom"
-          type="button"
-          aria-label="Bottom forward page corner"
-          disabled={!canTurnForward}
-          onPointerDown={(event) => handleCornerPointerDown(event, "forward", "bottom")}
-          onPointerMove={handleCornerPointerMove}
-          onPointerLeave={handleCornerPointerLeave}
-          onPointerUp={handleCornerPointerUp}
-          onPointerCancel={handleCornerPointerCancel}
-          onKeyDown={(event) => handleCornerKeyDown(event, "forward")}
-        />
-        <button
-          className="page-corner backward top"
-          type="button"
-          aria-label="Top backward page corner"
-          disabled={!canTurnBack}
-          onPointerDown={(event) => handleCornerPointerDown(event, "backward", "top")}
-          onPointerMove={handleCornerPointerMove}
-          onPointerLeave={handleCornerPointerLeave}
-          onPointerUp={handleCornerPointerUp}
-          onPointerCancel={handleCornerPointerCancel}
-          onKeyDown={(event) => handleCornerKeyDown(event, "backward")}
-        />
-        <button
-          className="page-corner backward bottom"
-          type="button"
-          aria-label="Bottom backward page corner"
-          disabled={!canTurnBack}
-          onPointerDown={(event) => handleCornerPointerDown(event, "backward", "bottom")}
-          onPointerMove={handleCornerPointerMove}
-          onPointerLeave={handleCornerPointerLeave}
-          onPointerUp={handleCornerPointerUp}
-          onPointerCancel={handleCornerPointerCancel}
-          onKeyDown={(event) => handleCornerKeyDown(event, "backward")}
-        />
-      </div>
+        ref={bookStage}
+      />
       <button
         className="spread-turn next"
         type="button"
         aria-label="Next page"
-        onClick={() => animateToSpread("forward")}
+        onClick={flipToNextPage}
         disabled={!canTurnForward}
       >
         <ChevronRight size={26} aria-hidden="true" />
@@ -509,80 +352,12 @@ function EpubBookReader({
   );
 }
 
-type TurnDirection = "forward" | "backward";
-type TurnCorner = "top" | "bottom";
-type PageTurnPhase = "dragging" | "settling";
-
-interface ReaderDragCue {
-  corner: TurnCorner;
-  direction: TurnDirection;
-  progress: number;
-}
-
-interface SpreadTransition {
-  corner: TurnCorner;
-  direction: TurnDirection;
-  fromSpread: number;
-  key: string;
-  startProgress: number;
-  toSpread: number;
-}
-
 interface RenderablePage {
   bodyHtml: string;
   id: string;
   kind: EpubPreviewPage["kind"] | "blank";
   pageNumber: number;
   title: string;
-}
-
-function PageTurnAnimation({
-  corner,
-  direction,
-  phase,
-  progress,
-}: {
-  corner: TurnCorner;
-  direction: TurnDirection;
-  phase: PageTurnPhase;
-  progress: number;
-}) {
-  return (
-    <div
-      className={`page-turn-animation ${direction} ${corner}`}
-      data-page-turn-animation=""
-      data-turn-corner={corner}
-      data-turn-direction={direction}
-      data-turn-phase={phase}
-      data-turn-progress={clamp(progress, 0, 1).toFixed(3)}
-      style={pageTurnStyle(direction, corner, progress)}
-      aria-hidden="true"
-    >
-      <div className="page-turn-sheet" />
-    </div>
-  );
-}
-
-function BookPageSurface({ page, side }: { page: RenderablePage; side: "left" | "right" }) {
-  const isBlank = page.kind === "blank";
-  return (
-    <article
-      className={`reader-page ${side}${isBlank ? " blank" : ""}`}
-      data-kind={page.kind}
-      data-page-number={page.pageNumber}
-      role={isBlank ? undefined : "document"}
-      aria-hidden={isBlank || undefined}
-      aria-label={isBlank ? undefined : `${page.title}, page ${page.pageNumber}`}
-    >
-      {isBlank ? null : (
-        <div
-          className="reader-page-content"
-          dangerouslySetInnerHTML={{ __html: page.bodyHtml }}
-        />
-      )}
-      {isBlank ? null : <span className="book-page-number">{page.pageNumber}</span>}
-    </article>
-  );
 }
 
 function createRenderablePages(pages: readonly EpubPreviewPage[]): RenderablePage[] {
@@ -602,91 +377,59 @@ function createRenderablePages(pages: readonly EpubPreviewPage[]): RenderablePag
   return rendered;
 }
 
-function getSpread(pages: readonly RenderablePage[], spreadIndex: number) {
-  const fallback = pages[0] || {
-    bodyHtml: "",
-    id: "__blank-page",
-    kind: "blank" as const,
-    pageNumber: 1,
-    title: "Blank",
-  };
-  return {
-    left: pages[spreadIndex * 2] || fallback,
-    right: pages[spreadIndex * 2 + 1] || fallback,
-  };
+function buildPageFlipElements(pages: readonly RenderablePage[]): HTMLElement[] {
+  return pages.map((page) => {
+    const element = document.createElement("article");
+    element.className = `reader-page${page.kind === "blank" ? " blank" : ""}`;
+    element.dataset.kind = page.kind;
+    element.dataset.pageNumber = String(page.pageNumber);
+    element.dataset.pageFlipPage = "";
+
+    if (page.kind === "blank") {
+      element.setAttribute("aria-hidden", "true");
+      return element;
+    }
+
+    element.setAttribute("aria-label", `${page.title}, page ${page.pageNumber}`);
+    element.setAttribute("role", "document");
+
+    const content = document.createElement("div");
+    content.className = "reader-page-content";
+    content.innerHTML = page.bodyHtml;
+    element.append(content);
+
+    const pageNumber = document.createElement("span");
+    pageNumber.className = "book-page-number";
+    pageNumber.textContent = String(page.pageNumber);
+    element.append(pageNumber);
+
+    return element;
+  });
 }
 
-function createSpreadTransition({
-  corner,
-  direction,
-  fromSpread,
-  startProgress,
-  toSpread,
-}: Omit<SpreadTransition, "key">): SpreadTransition {
-  return {
-    corner,
-    direction,
-    fromSpread,
-    key: `${direction}-${fromSpread}-${toSpread}-${Date.now()}`,
-    startProgress: clamp(startProgress, 0, 0.92),
-    toSpread,
-  };
+function normalizePageIndex(value: unknown, pageCount: number): number {
+  return clamp(typeof value === "number" ? value : 0, 0, Math.max(0, pageCount - 1));
 }
 
-function progressForPointer(direction: TurnDirection, startX: number, clientX: number): number {
-  const travel = 180;
-  if (direction === "forward") {
-    return clamp((startX - clientX) / travel, 0, 1);
+function normalizePageFlipState(value: unknown): PageFlipState {
+  if (
+    value === "read" ||
+    value === "user_fold" ||
+    value === "fold_corner" ||
+    value === "flipping"
+  ) {
+    return value;
   }
-  return clamp((clientX - startX) / travel, 0, 1);
+  return "read";
 }
 
-function dragShift(drag: ReaderDragCue): number {
-  const direction = drag.direction === "forward" ? -1 : 1;
-  return direction * clamp(drag.progress, 0, 1) * 12;
-}
-
-function pageTurnStyle(
-  direction: TurnDirection,
-  corner: TurnCorner,
-  progress: number,
-): CSSProperties {
-  const clippedProgress = clamp(progress, 0, 0.92);
-  const { topEdge, bottomEdge } = pageTurnEdges(direction, corner, clippedProgress);
-  const edgeCenter = (topEdge + bottomEdge) / 2;
-  const skewDirection = direction === "forward" ? -1 : 1;
-  const skewCorner = corner === "top" ? -1 : 1;
-  const skew = Math.sin(clippedProgress * Math.PI) * 4 * skewDirection * skewCorner;
-
-  return {
-    "--turn-bottom-edge": `${bottomEdge.toFixed(2)}%`,
-    "--turn-edge-center": `${edgeCenter.toFixed(2)}%`,
-    "--turn-offset": `${(clippedProgress * 100).toFixed(2)}%`,
-    "--turn-progress": clippedProgress.toFixed(3),
-    "--turn-shadow-opacity": (0.18 + Math.sin(clippedProgress * Math.PI) * 0.38).toFixed(3),
-    "--turn-skew": `${skew.toFixed(2)}deg`,
-    "--turn-top-edge": `${topEdge.toFixed(2)}%`,
-  } as CSSProperties;
-}
-
-function pageTurnEdges(
-  direction: TurnDirection,
-  corner: TurnCorner,
-  progress: number,
-): { topEdge: number; bottomEdge: number } {
-  const leadingEdge = progress * 100;
-  const trailingEdge = clamp((progress - 0.08) / 0.92, 0, 1) * 100;
-  const topEdge = corner === "top" ? leadingEdge : trailingEdge;
-  const bottomEdge = corner === "top" ? trailingEdge : leadingEdge;
-
-  if (direction === "forward") {
-    return {
-      bottomEdge: 100 - bottomEdge,
-      topEdge: 100 - topEdge,
-    };
-  }
-
-  return { bottomEdge, topEdge };
+function isPageFlipInitEvent(value: unknown): value is { page: number } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "page" in value &&
+    typeof (value as { page: unknown }).page === "number"
+  );
 }
 
 function clamp(value: number, min: number, max: number): number {
