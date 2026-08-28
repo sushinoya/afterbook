@@ -17,6 +17,9 @@ import {
 } from "../epub-preview.js";
 
 const PAGE_FLIP_DURATION_MS = 420;
+const PAGE_DRAG_EDGE_RATIO = 0.16;
+const PAGE_DRAG_EDGE_MIN_PX = 42;
+const PAGE_DRAG_EDGE_MAX_PX = 82;
 
 export function BookPreviewModal({
   book,
@@ -206,11 +209,16 @@ function EpubBookReader({
       const host = document.createElement("div");
       host.className = "page-flip-book";
       stage.append(host);
+      installPageDragStartGuard(host, {
+        getCurrentPageIndex: () => pageFlip.current?.getCurrentPageIndex() || 0,
+        getReaderState: () => pageFlip.current?.getState() || "read",
+        pageCount: renderedPages.length,
+      });
 
       const instance = new PageFlip(host, {
         autoSize: false,
         clickEventForward: true,
-        disableFlipByClick: false,
+        disableFlipByClick: true,
         drawShadow: true,
         flippingTime: PAGE_FLIP_DURATION_MS,
         height: pageHeight,
@@ -411,6 +419,68 @@ function buildPageFlipElements(pages: readonly RenderablePage[]): HTMLElement[] 
 
 function normalizePageIndex(value: unknown, pageCount: number): number {
   return clamp(typeof value === "number" ? value : 0, 0, Math.max(0, pageCount - 1));
+}
+
+function installPageDragStartGuard(
+  host: HTMLElement,
+  options: {
+    getCurrentPageIndex(): number;
+    getReaderState(): PageFlipState;
+    pageCount: number;
+  },
+) {
+  const guardDragStart = (event: MouseEvent | TouchEvent) => {
+    const point = pointerStartPoint(event);
+    if (!point || isAllowedPageDragStart(host, point, options)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  host.addEventListener("mousedown", guardDragStart, { capture: true });
+  host.addEventListener("touchstart", guardDragStart, { capture: true });
+}
+
+function pointerStartPoint(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
+  if (event instanceof MouseEvent) {
+    return { x: event.clientX, y: event.clientY };
+  }
+  const touch = event.changedTouches.item(0) || event.touches.item(0);
+  return touch ? { x: touch.clientX, y: touch.clientY } : null;
+}
+
+function isAllowedPageDragStart(
+  host: HTMLElement,
+  point: { x: number; y: number },
+  options: {
+    getCurrentPageIndex(): number;
+    getReaderState(): PageFlipState;
+    pageCount: number;
+  },
+) {
+  if (options.getReaderState() !== "read") {
+    return false;
+  }
+
+  const rect = host.getBoundingClientRect();
+  const localX = point.x - rect.left;
+  const localY = point.y - rect.top;
+  if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+    return false;
+  }
+
+  const pageWidth = rect.width / 2;
+  const dragEdgeWidth = clamp(
+    pageWidth * PAGE_DRAG_EDGE_RATIO,
+    PAGE_DRAG_EDGE_MIN_PX,
+    PAGE_DRAG_EDGE_MAX_PX,
+  );
+  const currentPageIndex = options.getCurrentPageIndex();
+  const canTurnBack = currentPageIndex > 0;
+  const canTurnForward = currentPageIndex < options.pageCount - 2;
+
+  return (canTurnBack && localX <= dragEdgeWidth) || (canTurnForward && localX >= rect.width - dragEdgeWidth);
 }
 
 function normalizePageFlipState(value: unknown): PageFlipState {

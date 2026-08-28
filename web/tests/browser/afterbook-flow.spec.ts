@@ -200,6 +200,15 @@ test("renders the EPUB preview as an open book across landscape screens", async 
       })
       .toBe(true);
 
+    const blockedForwardMiddleDrag = await dragFromRightPageMiddle(page, dialog);
+    assert.equal(blockedForwardMiddleDrag.state, "read", "middle-page forward drag should not start a page turn");
+    assert.equal(blockedForwardMiddleDrag.pageIndex, 0, "middle-page forward drag should not change pages");
+    assert.deepEqual(
+      blockedForwardMiddleDrag.restingPages,
+      [1, 2],
+      "middle-page forward drag should keep the current spread stable",
+    );
+
     await pullTopRightPageCorner(page, dialog);
     const draggingForward = await pageFlipInteractionMetrics(dialog);
     assert.equal(draggingForward.state, "user_fold", "dragging should be handled by StPageFlip");
@@ -249,6 +258,15 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     await expect(dialog.locator('.open-book-reader[data-reader-state="read"][data-page-index="2"]')).toBeVisible({
       timeout: 3_000,
     });
+    const blockedBackwardMiddleDrag = await dragFromLeftPageMiddle(page, dialog);
+    assert.equal(blockedBackwardMiddleDrag.state, "read", "middle-page backward drag should not start a page turn");
+    assert.equal(blockedBackwardMiddleDrag.pageIndex, 2, "middle-page backward drag should not change pages");
+    assert.deepEqual(
+      blockedBackwardMiddleDrag.restingPages,
+      [3, 4],
+      "middle-page backward drag should keep the current spread stable",
+    );
+
     await pullTopLeftPageCorner(page, dialog);
     const draggingBackward = await pageFlipInteractionMetrics(dialog);
     assert.equal(draggingBackward.state, "user_fold", "backward dragging should be handled by StPageFlip");
@@ -510,6 +528,44 @@ async function pullTopRightPageCorner(page: Page, dialog: Locator) {
   await expect(dialog.locator('.open-book-reader[data-reader-state="user_fold"]')).toBeVisible();
 }
 
+async function dragFromRightPageMiddle(page: Page, dialog: Locator) {
+  return dragFromPageMiddle(page, dialog, {
+    endXRatio: 0.38,
+    startXRatio: 0.75,
+  });
+}
+
+async function dragFromLeftPageMiddle(page: Page, dialog: Locator) {
+  return dragFromPageMiddle(page, dialog, {
+    endXRatio: 0.62,
+    startXRatio: 0.25,
+  });
+}
+
+async function dragFromPageMiddle(
+  page: Page,
+  dialog: Locator,
+  options: { endXRatio: number; startXRatio: number },
+) {
+  const book = dialog.locator(".book-stage");
+  const bookBox = await book.boundingBox();
+  assert.ok(bookBox, "expected a visible book stage");
+  const startX = bookBox.x + bookBox.width * options.startXRatio;
+  const startY = bookBox.y + bookBox.height * 0.5;
+  const endX = bookBox.x + bookBox.width * options.endXRatio;
+  const endY = bookBox.y + bookBox.height * 0.5;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 16 });
+  await page.waitForTimeout(160);
+  const metrics = await pageFlipInteractionMetrics(dialog);
+  await page.mouse.up();
+  await expect(dialog.locator('.open-book-reader[data-reader-state="read"]')).toBeVisible({
+    timeout: 1_000,
+  });
+  return metrics;
+}
+
 async function pullTopLeftPageCorner(page: Page, dialog: Locator) {
   const book = dialog.locator(".book-stage");
   const bookBox = await book.boundingBox();
@@ -545,6 +601,7 @@ async function pageFlipInteractionMetrics(dialog: Locator) {
         return style.display !== "none" && style.opacity !== "0";
       }),
       hasStPageFlipBlock: reader.querySelector(".stf__block") !== null,
+      pageIndex: Number(reader.getAttribute("data-page-index")),
       restingPages: Array.from(reader.querySelectorAll(".reader-page.--simple"))
         .filter((pageElement) => {
           const rect = pageElement.getBoundingClientRect();
