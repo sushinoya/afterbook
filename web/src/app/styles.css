@@ -120,6 +120,7 @@ button:disabled {
   color: #3c443b;
   font-size: clamp(18px, 2.2vw, 25px);
   line-height: 1.55;
+  text-wrap: balance;
 }
 
 .welcome-actions {

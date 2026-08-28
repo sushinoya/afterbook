@@ -79,9 +79,7 @@ function WelcomeScreen({ onStart }: { onStart(): void }) {
       <section className="welcome-copy" aria-labelledby="welcome-title">
         <h1 id="welcome-title">AfterBook.</h1>
         <p className="welcome-lede">
-          Keep the parts of an eBook that mattered to you. Connect a supported
-          ebook reader and turn highlights and notes into a small personal ePub
-          book.
+          Turn highlights and notes from your e-reader into a small personal ePub book.
         </p>
         <div className="welcome-actions">
           <button className="primary-button large" type="button" onClick={onStart}>
