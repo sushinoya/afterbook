@@ -330,7 +330,7 @@ button:disabled {
 
 .wizard-actions.compact-action {
   min-height: auto;
-  justify-content: flex-end;
+  justify-content: center;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1061,7 +1061,7 @@ button:disabled {
   }
 
   .wizard-actions.compact-action {
-    align-items: flex-end;
+    align-items: center;
   }
 
   .connection-detail {
