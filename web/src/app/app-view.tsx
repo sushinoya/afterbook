@@ -10,7 +10,6 @@ import {
   Lock,
   PlugZap,
   ShieldCheck,
-  Star,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -48,7 +47,10 @@ export function AppView() {
             <p>Keep the parts of an eBook that mattered to you.</p>
           </div>
         </div>
-        <StatusIndicator phase={model.phase} message={model.statusMessage} />
+        <div className="topbar-actions">
+          <GitHubStarButton />
+          <StatusIndicator phase={model.phase} message={model.statusMessage} />
+        </div>
       </header>
 
       <main className="reader-workspace" id="annotation-export">
@@ -62,8 +64,6 @@ export function AppView() {
           />
         )}
       </main>
-      <GitHubFooter />
-
       {model.selectedBook ? (
         <BookPreviewModal
           book={model.selectedBook}
@@ -100,24 +100,37 @@ function WelcomeScreen({ onStart }: { onStart(): void }) {
           </div>
         </div>
       </section>
-      <GitHubFooter />
     </main>
   );
 }
 
-function GitHubFooter() {
+function GitHubStarButton() {
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.async = true;
+    script.defer = true;
+    script.crossOrigin = "anonymous";
+    script.src = "https://buttons.github.io/buttons.js";
+    document.body.append(script);
+
+    return () => {
+      script.remove();
+    };
+  }, []);
+
   return (
-    <footer className="github-footer">
-      <a
-        className="github-star-link"
-        href={GITHUB_REPOSITORY_URL}
-        target="_blank"
-        rel="noreferrer"
-      >
-        <span>Star AfterBook on GitHub</span>
-        <Star size={15} aria-hidden="true" />
-      </a>
-    </footer>
+    <a
+      className="github-button github-star-embed"
+      href={GITHUB_REPOSITORY_URL}
+      data-icon="octicon-star"
+      data-size="large"
+      data-show-count="true"
+      aria-label="Star sushinoya/afterbook on GitHub"
+      target="_blank"
+      rel="noreferrer"
+    >
+      Star
+    </a>
   );
 }
 
@@ -190,7 +203,7 @@ function ConnectionWizard({
           ))}
         </div>
       ) : null}
-      <div className={`wizard-actions${step === 0 ? " single-action" : ""}`}>
+      <div className={`wizard-actions${step === 0 ? " compact-action" : ""}`}>
         {step === 1 ? (
           <button
             className="secondary-button"
