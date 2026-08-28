@@ -403,10 +403,20 @@ async function bookShapeMetrics(page: Page) {
       }
       return overlapCount;
     };
-    const visiblePages = Array.from(reader.querySelectorAll(".reader-page.--simple"))
+    const visiblePages = Array.from(reader.querySelectorAll(".reader-page"))
       .filter((pageElement) => {
         const rect = pageElement.getBoundingClientRect();
-        return getComputedStyle(pageElement).display !== "none" && rect.width > 1 && rect.height > 1;
+        const style = getComputedStyle(pageElement);
+        return (
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          rect.width > 1 &&
+          rect.height > 1 &&
+          rect.left >= stageRect.left - 1 &&
+          rect.right <= stageRect.right + 1 &&
+          rect.top >= stageRect.top - 1 &&
+          rect.bottom <= stageRect.bottom + 1
+        );
       })
       .map((pageElement) => {
         const rect = pageElement.getBoundingClientRect();
@@ -635,7 +645,7 @@ async function pageFlipInteractionMetrics(dialog: Locator) {
       }),
       hasLibraryRenderBlock: reader.querySelector(".stf__block") !== null,
       pageIndex: Number(reader.getAttribute("data-page-index")),
-      restingPages: Array.from(reader.querySelectorAll(".reader-page.--simple"))
+      restingPages: visibleRestingPages(reader)
         .filter((pageElement) => {
           const rect = pageElement.getBoundingClientRect();
           return getComputedStyle(pageElement).display !== "none" && rect.width > 1 && rect.height > 1;
@@ -654,6 +664,31 @@ async function pageFlipInteractionMetrics(dialog: Locator) {
           : null,
       state: reader.getAttribute("data-reader-state"),
     };
+
+    function visibleRestingPages(readerElement: Element) {
+      const restingPages = Array.from(readerElement.querySelectorAll(".reader-page.--simple"));
+      if (restingPages.length > 0) {
+        return restingPages;
+      }
+      return Array.from(readerElement.querySelectorAll(".reader-page"))
+        .filter((pageElement) => {
+          const rect = pageElement.getBoundingClientRect();
+          const stage = readerElement.querySelector(".book-stage");
+          const stageRect = stage?.getBoundingClientRect();
+          const style = getComputedStyle(pageElement);
+          return (
+            stageRect !== undefined &&
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            rect.width > 1 &&
+            rect.height > 1 &&
+            rect.left >= stageRect.left - 1 &&
+            rect.right <= stageRect.right + 1 &&
+            rect.top >= stageRect.top - 1 &&
+            rect.bottom <= stageRect.bottom + 1
+          );
+        });
+    }
   });
 }
 

@@ -503,22 +503,24 @@ const ReaderPageView = forwardRef<HTMLElement, ReaderPageViewProps>(
         aria-label={`${page.title}, page ${page.pageNumber}`}
         role="document"
       >
-        <div className="reader-page-content">
-          {page.kind === "cover" && page.coverImageSource ? (
-            <img
-              alt={page.title === "Cover" ? "Book cover" : `${page.title} cover`}
-              className="cover-art"
-              decoding="async"
-              draggable={false}
-              src={page.coverImageSource}
-            />
-          ) : (
-            <div dangerouslySetInnerHTML={{ __html: page.bodyHtml }} />
-          )}
+        <div className="reader-page-shell">
+          <div className="reader-page-content">
+            {page.kind === "cover" && page.coverImageSource ? (
+              <img
+                alt={page.title === "Cover" ? "Book cover" : `${page.title} cover`}
+                className="cover-art"
+                decoding="async"
+                draggable={false}
+                src={page.coverImageSource}
+              />
+            ) : (
+              <div dangerouslySetInnerHTML={{ __html: page.bodyHtml }} />
+            )}
+          </div>
+          {page.kind !== "cover" ? (
+            <span className="book-page-number">{page.pageNumber}</span>
+          ) : null}
         </div>
-        {page.kind !== "cover" ? (
-          <span className="book-page-number">{page.pageNumber}</span>
-        ) : null}
       </article>
     );
   },
