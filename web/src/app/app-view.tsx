@@ -42,7 +42,7 @@ export function AppView() {
           </div>
           <div>
             <h1>AfterBook</h1>
-            <p>Highlights and notes into a small personal ePub.</p>
+            <p>Keep the parts of an eBook that mattered to you.</p>
           </div>
         </div>
         <StatusIndicator phase={model.phase} message={model.statusMessage} />
@@ -154,7 +154,7 @@ function ConnectionWizard({
         <p>{currentStep.description}</p>
       </div>
 
-      {step === 1 ? (
+      {step === 1 && readers.length > 1 ? (
         <div className="reader-picker" aria-label="Reader source">
           {readers.map((reader) => (
             <button
@@ -168,6 +168,14 @@ function ConnectionWizard({
               <span>{reader.name}</span>
             </button>
           ))}
+        </div>
+      ) : null}
+      {step === 1 && readers.length === 1 ? (
+        <div className="reader-picker" aria-label="Supported reader">
+          <div className="reader-option">
+            <BookOpenCheck size={16} aria-hidden="true" />
+            <span>Supported now: {selectedReader?.name || "Kobo eReader"}</span>
+          </div>
         </div>
       ) : null}
 
@@ -213,15 +221,15 @@ function ConnectionWizard({
 
 const CONNECTION_STEPS = [
   {
-    title: "Connect your e-reader",
+    title: "Connect your reader by USB",
     description:
-      "Plug in your e-reader and choose the option that lets this computer access its files.",
+      "For Kobo, plug it in and tap Connect on the device. Wait for the reader drive to appear on this computer.",
     icon: <HardDrive size={30} aria-hidden="true" />,
   },
   {
-    title: "Choose your e-reader",
+    title: "Select the reader drive",
     description:
-      "When the browser prompt opens, select your e-reader from the sidebar or choose its drive.",
+      "When the browser asks, choose the top-level reader drive, for example KOBOeReader. Do not choose an individual book or subfolder.",
     icon: <FolderOpen size={30} aria-hidden="true" />,
   },
 ] as const;

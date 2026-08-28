@@ -8,7 +8,7 @@ export function createReaderRegistry(): readonly ReaderDefinition[] {
       id: KOBO_READER_ID,
       name: "Kobo eReader",
       vendor: "Kobo",
-      connectionLabel: "Kobo eReader folder",
+      connectionLabel: "Select the top-level reader drive when prompted.",
       capabilities: [READER_CAPABILITIES.annotationExport],
       adapter: new KoboBrowserReaderAdapter(),
     },

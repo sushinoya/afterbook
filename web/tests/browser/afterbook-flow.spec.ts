@@ -79,11 +79,11 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "AfterBook." })).toBeVisible();
   await page.getByRole("button", { name: "Get started" }).click();
-  await expect(page.getByRole("heading", { name: "Connect your e-reader" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connect your reader by USB" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Annotated books" })).toBeHidden();
 
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("heading", { name: "Choose your e-reader" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Select the reader drive" })).toBeVisible();
   await page.getByRole("button", { name: "Connect Reader" }).click();
 
   const fixtureBook = page.getByRole("button", { name: "Open Browser Fixture" });
