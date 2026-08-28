@@ -355,6 +355,14 @@ async function bookShapeMetrics(page: Page) {
     }
     const stageRect = stage.getBoundingClientRect();
     const stageStyle = getComputedStyle(stage);
+    const contentPaddingBottom = (pageElement: Element) => {
+      const content = pageElement.querySelector(".reader-page-content");
+      return content ? Number.parseFloat(getComputedStyle(content).paddingBottom) : 0;
+    };
+    const pageNumberHeight = (pageElement: Element) => {
+      const pageNumber = pageElement.querySelector(".book-page-number");
+      return pageNumber ? pageNumber.getBoundingClientRect().height : 0;
+    };
     const visiblePages = Array.from(reader.querySelectorAll(".reader-page.--simple"))
       .filter((pageElement) => {
         const rect = pageElement.getBoundingClientRect();
@@ -372,6 +380,10 @@ async function bookShapeMetrics(page: Page) {
           width: rect.width,
           height: rect.height,
           clientHeight: pageElement.clientHeight,
+          contentPaddingBottom: contentPaddingBottom(pageElement),
+          hasPageNumber: pageElement.querySelector(".book-page-number") !== null,
+          kind: pageElement.getAttribute("data-kind"),
+          pageNumberHeight: pageNumberHeight(pageElement),
           scrollHeight: pageElement.scrollHeight,
           borderTopLeftRadius: style.borderTopLeftRadius,
           borderTopRightRadius: style.borderTopRightRadius,
@@ -434,6 +446,14 @@ function assertBookShape(
       pageMetrics.scrollHeight <= pageMetrics.clientHeight + 1,
       "pages should not overflow vertically",
     );
+    if (pageMetrics.kind === "cover") {
+      assert.equal(pageMetrics.hasPageNumber, false, "cover pages should not render a folio");
+    } else if (pageMetrics.hasPageNumber) {
+      assert.ok(
+        pageMetrics.contentPaddingBottom >= pageMetrics.pageNumberHeight + 18,
+        "page content should reserve clear space above the folio",
+      );
+    }
   }
 }
 
@@ -539,36 +559,96 @@ async function pageFlipInteractionMetrics(dialog: Locator) {
 
 async function assertCoverFillsPage(dialog: Locator) {
   const coverMetrics = await dialog.locator('.reader-page[data-kind="cover"]').evaluate((pageElement) => {
+    const content = pageElement.querySelector(".reader-page-content");
+    const frame = pageElement.querySelector(".cover-frame");
+    const cell = pageElement.querySelector(".cover-cell");
     const media = pageElement.querySelector("img, svg");
-    if (!media) {
+    if (!content || !frame || !cell || !media) {
       throw new Error("Expected cover media.");
     }
     const pageRect = pageElement.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
     const mediaRect = media.getBoundingClientRect();
+    const pageStyle = getComputedStyle(pageElement);
+    const contentStyle = getComputedStyle(content);
+    const mediaStyle = getComputedStyle(media);
     return {
+      cellInsidePage: rectInside(cellRect, pageRect),
+      contentInsidePage: rectInside(contentRect, pageRect),
+      contentOverflow: contentStyle.overflow,
       fillsPage:
         Math.abs(pageRect.left - mediaRect.left) <= 1 &&
         Math.abs(pageRect.top - mediaRect.top) <= 1 &&
         Math.abs(pageRect.width - mediaRect.width) <= 1 &&
         Math.abs(pageRect.height - mediaRect.height) <= 1,
+      frameInsidePage: rectInside(frameRect, pageRect),
+      mediaInsidePage: rectInside(mediaRect, pageRect),
+      mediaObjectFit: mediaStyle.objectFit,
+      pageNumberCount: pageElement.querySelectorAll(".book-page-number").length,
+      pageOverflow: pageStyle.overflow,
       media: {
+        bottom: mediaRect.bottom,
         height: mediaRect.height,
         left: mediaRect.left,
+        right: mediaRect.right,
         top: mediaRect.top,
         width: mediaRect.width,
       },
       page: {
+        bottom: pageRect.bottom,
         height: pageRect.height,
         left: pageRect.left,
+        right: pageRect.right,
         top: pageRect.top,
         width: pageRect.width,
       },
     };
+
+    function rectInside(inner: DOMRect, outer: DOMRect) {
+      return (
+        inner.left >= outer.left - 1 &&
+        inner.top >= outer.top - 1 &&
+        inner.right <= outer.right + 1 &&
+        inner.bottom <= outer.bottom + 1
+      );
+    }
   });
+  assert.equal(
+    coverMetrics.pageNumberCount,
+    0,
+    `cover should not render a page number over the artwork: ${JSON.stringify(coverMetrics)}`,
+  );
+  assert.equal(
+    coverMetrics.pageOverflow,
+    "hidden",
+    `cover page should clip its contents: ${JSON.stringify(coverMetrics)}`,
+  );
+  assert.equal(
+    coverMetrics.contentOverflow,
+    "hidden",
+    `cover content should clip nested media: ${JSON.stringify(coverMetrics)}`,
+  );
   assert.equal(
     coverMetrics.fillsPage,
     true,
     `cover should fill the full page surface: ${JSON.stringify(coverMetrics)}`,
+  );
+  assert.equal(
+    coverMetrics.contentInsidePage && coverMetrics.frameInsidePage && coverMetrics.cellInsidePage,
+    true,
+    `cover wrappers should stay inside the page surface: ${JSON.stringify(coverMetrics)}`,
+  );
+  assert.equal(
+    coverMetrics.mediaInsidePage,
+    true,
+    `cover media should not overflow the page surface: ${JSON.stringify(coverMetrics)}`,
+  );
+  assert.equal(
+    coverMetrics.mediaObjectFit,
+    "cover",
+    `cover media should be cropped within the page, not spilled out: ${JSON.stringify(coverMetrics)}`,
   );
 }
 

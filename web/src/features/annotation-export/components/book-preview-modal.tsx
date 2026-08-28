@@ -398,10 +398,12 @@ function buildPageFlipElements(pages: readonly RenderablePage[]): HTMLElement[] 
     content.innerHTML = page.bodyHtml;
     element.append(content);
 
-    const pageNumber = document.createElement("span");
-    pageNumber.className = "book-page-number";
-    pageNumber.textContent = String(page.pageNumber);
-    element.append(pageNumber);
+    if (page.kind !== "cover") {
+      const pageNumber = document.createElement("span");
+      pageNumber.className = "book-page-number";
+      pageNumber.textContent = String(page.pageNumber);
+      element.append(pageNumber);
+    }
 
     return element;
   });
