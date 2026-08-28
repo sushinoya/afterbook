@@ -169,15 +169,6 @@ function ConnectionWizard({
           ))}
         </div>
       ) : null}
-      {step === 1 && readers.length === 1 ? (
-        <div className="reader-picker" aria-label="Supported reader">
-          <div className="reader-option">
-            <BookOpenCheck size={16} aria-hidden="true" />
-            <span>Supported now: {selectedReader?.name || "Kobo eReader"}</span>
-          </div>
-        </div>
-      ) : null}
-
       <div className={`wizard-actions${step === 0 ? " single-action" : ""}`}>
         {step === 1 ? (
           <button

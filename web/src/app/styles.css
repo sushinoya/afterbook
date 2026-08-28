@@ -350,8 +350,7 @@ button:disabled {
   justify-content: center;
 }
 
-.reader-chip,
-.reader-option {
+.reader-chip {
   min-height: 40px;
   display: inline-flex;
   align-items: center;
@@ -362,13 +361,6 @@ button:disabled {
   background: var(--surface);
   color: var(--ink);
   font-weight: 750;
-}
-
-.reader-option {
-  cursor: default;
-  border-color: var(--sage);
-  color: var(--sage-dark);
-  background: var(--sage-soft);
 }
 
 .reader-chip[data-selected="true"] {
