@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import json
 import sqlite3
+import struct
 import tempfile
+import zlib
 from pathlib import Path
 from sys import path
 
@@ -150,11 +152,24 @@ def encoded_file(path: Path) -> str:
 
 
 def png_bytes(width: int, height: int) -> bytes:
+    row = b"\x00" + (b"\x7f\x65\x4a" * width)
     return (
         b"\x89PNG\r\n\x1a\n"
-        + b"\x00\x00\x00\x0dIHDR"
-        + width.to_bytes(4, "big")
-        + height.to_bytes(4, "big")
+        + png_chunk(
+            b"IHDR",
+            struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0),
+        )
+        + png_chunk(b"IDAT", zlib.compress(row * height))
+        + png_chunk(b"IEND", b"")
+    )
+
+
+def png_chunk(kind: bytes, data: bytes) -> bytes:
+    return (
+        len(data).to_bytes(4, "big")
+        + kind
+        + data
+        + zlib.crc32(kind + data).to_bytes(4, "big")
     )
 
 

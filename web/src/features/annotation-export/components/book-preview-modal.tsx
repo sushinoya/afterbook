@@ -404,6 +404,9 @@ function buildPageFlipElements(pages: readonly RenderablePage[]): HTMLElement[] 
     const content = document.createElement("div");
     content.className = "reader-page-content";
     content.innerHTML = page.bodyHtml;
+    if (page.kind === "cover") {
+      normalizeCoverPageContent(content, page.title);
+    }
     element.append(content);
 
     if (page.kind !== "cover") {
@@ -415,6 +418,48 @@ function buildPageFlipElements(pages: readonly RenderablePage[]): HTMLElement[] 
 
     return element;
   });
+}
+
+function normalizeCoverPageContent(content: HTMLElement, title: string) {
+  const source = coverImageSource(content);
+  if (!source) {
+    return;
+  }
+
+  const image = document.createElement("img");
+  image.alt = title === "Cover" ? "Book cover" : `${title} cover`;
+  image.className = "cover-art";
+  image.decoding = "async";
+  image.draggable = false;
+  image.src = source;
+  content.replaceChildren(image);
+}
+
+function coverImageSource(content: HTMLElement): string | null {
+  const candidates: string[] = [];
+  const image = content.querySelector("img");
+  const directSource = image?.getAttribute("src");
+  if (directSource) {
+    candidates.push(directSource);
+  }
+
+  const svgImage = content.querySelector("svg image");
+  const svgHref =
+    svgImage && "href" in svgImage
+      ? (svgImage.href as SVGAnimatedString | undefined)?.baseVal
+      : null;
+  for (const source of [
+    svgHref,
+    svgImage?.getAttribute("href"),
+    svgImage?.getAttribute("xlink:href"),
+    svgImage?.getAttributeNS("http://www.w3.org/1999/xlink", "href"),
+  ]) {
+    if (source) {
+      candidates.push(source);
+    }
+  }
+
+  return candidates.find((source) => source.startsWith("data:")) || candidates[0] || null;
 }
 
 function normalizePageIndex(value: unknown, pageCount: number): number {

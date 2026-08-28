@@ -658,24 +658,31 @@ async function pageFlipInteractionMetrics(dialog: Locator) {
 }
 
 async function assertCoverFillsPage(dialog: Locator) {
-  const coverMetrics = await dialog.locator('.reader-page[data-kind="cover"]').evaluate((pageElement) => {
+  const coverMetrics = await dialog.locator(".open-book-reader").evaluate((reader) => {
+    const visibleCovers = Array.from(reader.querySelectorAll('.reader-page[data-kind="cover"]')).filter(
+      (pageElement) => {
+        const rect = pageElement.getBoundingClientRect();
+        return getComputedStyle(pageElement).display !== "none" && rect.width > 1 && rect.height > 1;
+      },
+    );
+    const pageElement = visibleCovers[0];
+    if (!pageElement) {
+      throw new Error("Expected a visible cover page.");
+    }
     const content = pageElement.querySelector(".reader-page-content");
-    const frame = pageElement.querySelector(".cover-frame");
-    const cell = pageElement.querySelector(".cover-cell");
-    const media = pageElement.querySelector("img, svg");
-    if (!content || !frame || !cell || !media) {
-      throw new Error("Expected cover media.");
+    const media = pageElement.querySelector(".cover-art");
+    if (!content || !(media instanceof HTMLImageElement)) {
+      throw new Error("Expected visible cover art.");
     }
     const pageRect = pageElement.getBoundingClientRect();
     const contentRect = content.getBoundingClientRect();
-    const frameRect = frame.getBoundingClientRect();
-    const cellRect = cell.getBoundingClientRect();
     const mediaRect = media.getBoundingClientRect();
     const pageStyle = getComputedStyle(pageElement);
     const contentStyle = getComputedStyle(content);
     const mediaStyle = getComputedStyle(media);
+    const source = media.getAttribute("src") || "";
     return {
-      cellInsidePage: rectInside(cellRect, pageRect),
+      contentFillsPage: sameRect(contentRect, pageRect),
       contentInsidePage: rectInside(contentRect, pageRect),
       contentOverflow: contentStyle.overflow,
       fillsPage:
@@ -683,16 +690,22 @@ async function assertCoverFillsPage(dialog: Locator) {
         Math.abs(pageRect.top - mediaRect.top) <= 1 &&
         Math.abs(pageRect.width - mediaRect.width) <= 1 &&
         Math.abs(pageRect.height - mediaRect.height) <= 1,
-      frameInsidePage: rectInside(frameRect, pageRect),
       mediaInsidePage: rectInside(mediaRect, pageRect),
+      mediaLoaded: media.complete && media.naturalWidth > 0 && media.naturalHeight > 0,
       mediaObjectFit: mediaStyle.objectFit,
+      mediaTagName: media.tagName.toLowerCase(),
       pageNumberCount: pageElement.querySelectorAll(".book-page-number").length,
       pageOverflow: pageStyle.overflow,
+      visibleCoverCount: visibleCovers.length,
       media: {
         bottom: mediaRect.bottom,
         height: mediaRect.height,
         left: mediaRect.left,
+        naturalHeight: media.naturalHeight,
+        naturalWidth: media.naturalWidth,
         right: mediaRect.right,
+        srcLength: source.length,
+        srcPrefix: source.slice(0, 22),
         top: mediaRect.top,
         width: mediaRect.width,
       },
@@ -706,6 +719,15 @@ async function assertCoverFillsPage(dialog: Locator) {
       },
     };
 
+    function sameRect(left: DOMRect, right: DOMRect) {
+      return (
+        Math.abs(left.left - right.left) <= 1 &&
+        Math.abs(left.top - right.top) <= 1 &&
+        Math.abs(left.width - right.width) <= 1 &&
+        Math.abs(left.height - right.height) <= 1
+      );
+    }
+
     function rectInside(inner: DOMRect, outer: DOMRect) {
       return (
         inner.left >= outer.left - 1 &&
@@ -715,6 +737,11 @@ async function assertCoverFillsPage(dialog: Locator) {
       );
     }
   });
+  assert.equal(
+    coverMetrics.visibleCoverCount,
+    1,
+    `exactly one visible cover page should be measured: ${JSON.stringify(coverMetrics)}`,
+  );
   assert.equal(
     coverMetrics.pageNumberCount,
     0,
@@ -736,9 +763,9 @@ async function assertCoverFillsPage(dialog: Locator) {
     `cover should fill the full page surface: ${JSON.stringify(coverMetrics)}`,
   );
   assert.equal(
-    coverMetrics.contentInsidePage && coverMetrics.frameInsidePage && coverMetrics.cellInsidePage,
+    coverMetrics.contentFillsPage && coverMetrics.contentInsidePage,
     true,
-    `cover wrappers should stay inside the page surface: ${JSON.stringify(coverMetrics)}`,
+    `cover content should align exactly with the page surface: ${JSON.stringify(coverMetrics)}`,
   );
   assert.equal(
     coverMetrics.mediaInsidePage,
@@ -746,9 +773,19 @@ async function assertCoverFillsPage(dialog: Locator) {
     `cover media should not overflow the page surface: ${JSON.stringify(coverMetrics)}`,
   );
   assert.equal(
+    coverMetrics.mediaLoaded,
+    true,
+    `cover media should be loaded before measuring alignment: ${JSON.stringify(coverMetrics)}`,
+  );
+  assert.equal(
     coverMetrics.mediaObjectFit,
     "cover",
     `cover media should be cropped within the page, not spilled out: ${JSON.stringify(coverMetrics)}`,
+  );
+  assert.equal(
+    coverMetrics.mediaTagName,
+    "img",
+    `cover preview should use a browser-native image element: ${JSON.stringify(coverMetrics)}`,
   );
 }
 
