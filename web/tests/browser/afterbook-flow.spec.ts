@@ -175,6 +175,11 @@ test("renders the EPUB preview as an open book across landscape screens", async 
       0,
       "hovering a page corner must not render a preview spread",
     );
+    assert.equal(
+      await dialog.locator(".page-turn-animation").count(),
+      0,
+      "hovering a page corner must not start the flip animation",
+    );
 
     const fontSizeBefore = await visibleReaderTypeMetrics(dialog);
     await setReaderTextSizeToLarge(page, dialog);
@@ -191,6 +196,12 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     const draggingForward = await dragCueMetrics(dialog);
     assert.equal(draggingForward.state, "dragging", "page corner drag should be tracked");
     assert.equal(draggingForward.direction, "forward", "forward corner drag should be tracked");
+    assert.ok(draggingForward.pageTurn, "dragging should render a page-turn animation");
+    assert.equal(draggingForward.pageTurn.direction, "forward", "forward drag should animate forward");
+    assert.equal(draggingForward.pageTurn.phase, "dragging", "forward drag should expose the dragging phase");
+    assert.equal(draggingForward.pageTurn.text, "", "page-turn animation must not mirror EPUB text");
+    assert.notEqual(draggingForward.pageTurn.sheetTransform, "none", "dragged paper should move with the pointer");
+    assert.match(draggingForward.pageTurn.sheetClipPath, /polygon/, "dragged paper should curl from the corner");
     assert.ok(
       draggingForward.progress > 0.45,
       "drag progress should follow the pointer before release",
@@ -216,8 +227,14 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     const turningForward = await spreadTransitionMetrics(dialog);
     assert.equal(turningForward.readerState, "transitioning", "released forward drag should start a spread transition");
     assert.equal(turningForward.direction, "forward", "forward drag should transition forward");
+    assert.ok(turningForward.pageTurn, "released forward drag should render a page-turn animation");
+    assert.equal(turningForward.pageTurn.direction, "forward", "released forward drag should animate forward");
+    assert.equal(turningForward.pageTurn.phase, "settling", "released forward drag should settle the page turn");
+    assert.equal(turningForward.pageTurn.text, "", "page-turn animation must not mirror EPUB text");
+    assert.notEqual(turningForward.pageTurn.sheetTransform, "none", "settling page turn should visibly move paper");
+    assert.match(turningForward.pageTurn.sheetClipPath, /polygon/, "settling page turn should keep a paper curl");
     assert.ok(
-      turningForward.durationMs <= 260,
+      turningForward.durationMs <= 320,
       "spread transition should feel responsive, not slow",
     );
     assert.equal(turningForward.hasTurningSheet, false, "reader should not use a 3D turning sheet");
@@ -267,6 +284,12 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     const draggingBackward = await dragCueMetrics(dialog);
     assert.equal(draggingBackward.state, "dragging", "backward corner drag should be tracked");
     assert.equal(draggingBackward.direction, "backward", "backward drag should be tracked");
+    assert.ok(draggingBackward.pageTurn, "backward dragging should render a page-turn animation");
+    assert.equal(draggingBackward.pageTurn.direction, "backward", "backward drag should animate backward");
+    assert.equal(draggingBackward.pageTurn.phase, "dragging", "backward drag should expose the dragging phase");
+    assert.equal(draggingBackward.pageTurn.text, "", "page-turn animation must not mirror EPUB text");
+    assert.notEqual(draggingBackward.pageTurn.sheetTransform, "none", "backward dragged paper should move with the pointer");
+    assert.match(draggingBackward.pageTurn.sheetClipPath, /polygon/, "backward dragged paper should curl from the corner");
     assert.ok(
       draggingBackward.progress > 0.45,
       "backward drag progress should follow the pointer before release",
@@ -282,6 +305,10 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     const turningBackward = await spreadTransitionMetrics(dialog);
     assert.equal(turningBackward.readerState, "transitioning", "released backward drag should start a spread transition");
     assert.equal(turningBackward.direction, "backward", "backward drag should transition backward");
+    assert.ok(turningBackward.pageTurn, "released backward drag should render a page-turn animation");
+    assert.equal(turningBackward.pageTurn.direction, "backward", "released backward drag should animate backward");
+    assert.equal(turningBackward.pageTurn.phase, "settling", "released backward drag should settle the page turn");
+    assert.equal(turningBackward.pageTurn.text, "", "page-turn animation must not mirror EPUB text");
     assert.deepEqual(
       turningBackward.currentPages,
       [3, 4],
@@ -534,6 +561,8 @@ async function pullTopLeftPageCorner(page: Page, dialog: Locator) {
 async function dragCueMetrics(dialog: Locator) {
   return dialog.locator(".open-book-reader").evaluate((reader) => {
     const currentSpread = reader.querySelector(".book-spread.current");
+    const pageTurn = reader.querySelector(".page-turn-animation");
+    const pageTurnSheet = pageTurn?.querySelector(".page-turn-sheet");
     if (!currentSpread) {
       throw new Error("Expected the current book spread.");
     }
@@ -544,6 +573,16 @@ async function dragCueMetrics(dialog: Locator) {
       currentTransform: getComputedStyle(currentSpread).transform,
       direction: reader.getAttribute("data-drag-direction"),
       incomingCount: reader.querySelectorAll(".book-spread.incoming").length,
+      pageTurn:
+        pageTurn && pageTurnSheet
+          ? {
+              direction: pageTurn.getAttribute("data-turn-direction"),
+              phase: pageTurn.getAttribute("data-turn-phase"),
+              sheetClipPath: getComputedStyle(pageTurnSheet).clipPath,
+              sheetTransform: getComputedStyle(pageTurnSheet).transform,
+              text: pageTurn.textContent?.trim() || "",
+            }
+          : null,
       progress: Number(reader.getAttribute("data-drag-progress")),
       state: reader.getAttribute("data-reader-state"),
       turningSheetCount: reader.querySelectorAll(".turning-sheet").length,
@@ -555,6 +594,8 @@ async function spreadTransitionMetrics(dialog: Locator) {
   return dialog.locator(".open-book-reader").evaluate((reader) => {
     const currentSpread = reader.querySelector(".book-spread.current");
     const incomingSpread = reader.querySelector(".book-spread.incoming");
+    const pageTurn = reader.querySelector(".page-turn-animation");
+    const pageTurnSheet = pageTurn?.querySelector(".page-turn-sheet");
     if (!currentSpread || !incomingSpread) {
       throw new Error("Expected current and incoming book spreads.");
     }
@@ -573,6 +614,16 @@ async function spreadTransitionMetrics(dialog: Locator) {
       incomingPages: Array.from(incomingSpread.querySelectorAll(":scope > .reader-page")).map(
         (pageElement) => Number(pageElement.getAttribute("data-page-number")),
       ),
+      pageTurn:
+        pageTurn && pageTurnSheet
+          ? {
+              direction: pageTurn.getAttribute("data-turn-direction"),
+              phase: pageTurn.getAttribute("data-turn-phase"),
+              sheetClipPath: getComputedStyle(pageTurnSheet).clipPath,
+              sheetTransform: getComputedStyle(pageTurnSheet).transform,
+              text: pageTurn.textContent?.trim() || "",
+            }
+          : null,
       page3Content:
         page3Rect && page3Style
           ? {

@@ -19,7 +19,7 @@ import {
   type EpubPreviewPage,
 } from "../epub-preview.js";
 
-const SPREAD_TRANSITION_MS = 220;
+const SPREAD_TRANSITION_MS = 280;
 const TURN_DRAG_DISTANCE = 38;
 const TURN_COMPLETE_THRESHOLD = 0.34;
 
@@ -138,6 +138,7 @@ function EpubBookReader({
 }) {
   const transitionTimeout = useRef<number | null>(null);
   const dragStart = useRef<{
+    corner: TurnCorner;
     direction: TurnDirection;
     pointerId: number;
     x: number;
@@ -195,7 +196,10 @@ function EpubBookReader({
   }, []);
 
   const animateToSpread = useCallback(
-    (direction: TurnDirection) => {
+    (
+      direction: TurnDirection,
+      options: { corner?: TurnCorner; startProgress?: number } = {},
+    ) => {
       const toSpread = direction === "forward" ? spreadIndex + 1 : spreadIndex - 1;
       if (!preview || transition || toSpread < 0 || toSpread >= spreadCount) {
         return;
@@ -206,8 +210,10 @@ function EpubBookReader({
       }
 
       const nextTransition = createSpreadTransition({
+        corner: options.corner || "top",
         direction,
         fromSpread: spreadIndex,
+        startProgress: options.startProgress || 0,
         toSpread,
       });
       setDragCue(null);
@@ -246,6 +252,7 @@ function EpubBookReader({
     (
       event: ReactPointerEvent<HTMLButtonElement>,
       direction: TurnDirection,
+      corner: TurnCorner,
     ) => {
       if ((event.pointerType === "mouse" && event.button !== 0) || transition) {
         return;
@@ -263,13 +270,14 @@ function EpubBookReader({
       }
 
       dragStart.current = {
+        corner,
         direction,
         pointerId: event.pointerId,
         x: event.clientX,
         y: event.clientY,
       };
       event.currentTarget.setPointerCapture(event.pointerId);
-      setDragCue({ direction, progress: 0 });
+      setDragCue({ corner, direction, progress: 0 });
     },
     [canTurnBack, canTurnForward, spreadCount, spreadIndex, transition],
   );
@@ -281,7 +289,7 @@ function EpubBookReader({
     }
 
     const progress = progressForPointer(start.direction, start.x, event.clientX);
-    setDragCue({ direction: start.direction, progress });
+    setDragCue({ corner: start.corner, direction: start.direction, progress });
   }, []);
 
   const handleCornerPointerLeave = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -331,7 +339,10 @@ function EpubBookReader({
         deltaY >= TURN_DRAG_DISTANCE * 1.4 ||
         progress >= TURN_COMPLETE_THRESHOLD
       ) {
-        animateToSpread(start.direction);
+        animateToSpread(start.direction, {
+          corner: start.corner,
+          startProgress: progress,
+        });
       }
     },
     [animateToSpread, dragCue],
@@ -414,12 +425,29 @@ function EpubBookReader({
             <BookPageSurface page={targetSpread.right} side="right" />
           </div>
         ) : null}
+        {dragCue ? (
+          <PageTurnAnimation
+            corner={dragCue.corner}
+            direction={dragCue.direction}
+            phase="dragging"
+            progress={dragCue.progress}
+          />
+        ) : null}
+        {transition ? (
+          <PageTurnAnimation
+            key={transition.key}
+            corner={transition.corner}
+            direction={transition.direction}
+            phase="settling"
+            progress={transition.startProgress}
+          />
+        ) : null}
         <button
           className="page-corner forward top"
           type="button"
           aria-label="Top forward page corner"
           disabled={!canTurnForward}
-          onPointerDown={(event) => handleCornerPointerDown(event, "forward")}
+          onPointerDown={(event) => handleCornerPointerDown(event, "forward", "top")}
           onPointerMove={handleCornerPointerMove}
           onPointerLeave={handleCornerPointerLeave}
           onPointerUp={handleCornerPointerUp}
@@ -431,7 +459,7 @@ function EpubBookReader({
           type="button"
           aria-label="Bottom forward page corner"
           disabled={!canTurnForward}
-          onPointerDown={(event) => handleCornerPointerDown(event, "forward")}
+          onPointerDown={(event) => handleCornerPointerDown(event, "forward", "bottom")}
           onPointerMove={handleCornerPointerMove}
           onPointerLeave={handleCornerPointerLeave}
           onPointerUp={handleCornerPointerUp}
@@ -443,7 +471,7 @@ function EpubBookReader({
           type="button"
           aria-label="Top backward page corner"
           disabled={!canTurnBack}
-          onPointerDown={(event) => handleCornerPointerDown(event, "backward")}
+          onPointerDown={(event) => handleCornerPointerDown(event, "backward", "top")}
           onPointerMove={handleCornerPointerMove}
           onPointerLeave={handleCornerPointerLeave}
           onPointerUp={handleCornerPointerUp}
@@ -455,7 +483,7 @@ function EpubBookReader({
           type="button"
           aria-label="Bottom backward page corner"
           disabled={!canTurnBack}
-          onPointerDown={(event) => handleCornerPointerDown(event, "backward")}
+          onPointerDown={(event) => handleCornerPointerDown(event, "backward", "bottom")}
           onPointerMove={handleCornerPointerMove}
           onPointerLeave={handleCornerPointerLeave}
           onPointerUp={handleCornerPointerUp}
@@ -482,16 +510,21 @@ function EpubBookReader({
 }
 
 type TurnDirection = "forward" | "backward";
+type TurnCorner = "top" | "bottom";
+type PageTurnPhase = "dragging" | "settling";
 
 interface ReaderDragCue {
+  corner: TurnCorner;
   direction: TurnDirection;
   progress: number;
 }
 
 interface SpreadTransition {
+  corner: TurnCorner;
   direction: TurnDirection;
   fromSpread: number;
   key: string;
+  startProgress: number;
   toSpread: number;
 }
 
@@ -501,6 +534,33 @@ interface RenderablePage {
   kind: EpubPreviewPage["kind"] | "blank";
   pageNumber: number;
   title: string;
+}
+
+function PageTurnAnimation({
+  corner,
+  direction,
+  phase,
+  progress,
+}: {
+  corner: TurnCorner;
+  direction: TurnDirection;
+  phase: PageTurnPhase;
+  progress: number;
+}) {
+  return (
+    <div
+      className={`page-turn-animation ${direction} ${corner}`}
+      data-page-turn-animation=""
+      data-turn-corner={corner}
+      data-turn-direction={direction}
+      data-turn-phase={phase}
+      data-turn-progress={clamp(progress, 0, 1).toFixed(3)}
+      style={pageTurnStyle(direction, corner, progress)}
+      aria-hidden="true"
+    >
+      <div className="page-turn-sheet" />
+    </div>
+  );
 }
 
 function BookPageSurface({ page, side }: { page: RenderablePage; side: "left" | "right" }) {
@@ -557,14 +617,18 @@ function getSpread(pages: readonly RenderablePage[], spreadIndex: number) {
 }
 
 function createSpreadTransition({
+  corner,
   direction,
   fromSpread,
+  startProgress,
   toSpread,
 }: Omit<SpreadTransition, "key">): SpreadTransition {
   return {
+    corner,
     direction,
     fromSpread,
     key: `${direction}-${fromSpread}-${toSpread}-${Date.now()}`,
+    startProgress: clamp(startProgress, 0, 0.92),
     toSpread,
   };
 }
@@ -580,6 +644,49 @@ function progressForPointer(direction: TurnDirection, startX: number, clientX: n
 function dragShift(drag: ReaderDragCue): number {
   const direction = drag.direction === "forward" ? -1 : 1;
   return direction * clamp(drag.progress, 0, 1) * 12;
+}
+
+function pageTurnStyle(
+  direction: TurnDirection,
+  corner: TurnCorner,
+  progress: number,
+): CSSProperties {
+  const clippedProgress = clamp(progress, 0, 0.92);
+  const { topEdge, bottomEdge } = pageTurnEdges(direction, corner, clippedProgress);
+  const edgeCenter = (topEdge + bottomEdge) / 2;
+  const skewDirection = direction === "forward" ? -1 : 1;
+  const skewCorner = corner === "top" ? -1 : 1;
+  const skew = Math.sin(clippedProgress * Math.PI) * 4 * skewDirection * skewCorner;
+
+  return {
+    "--turn-bottom-edge": `${bottomEdge.toFixed(2)}%`,
+    "--turn-edge-center": `${edgeCenter.toFixed(2)}%`,
+    "--turn-offset": `${(clippedProgress * 100).toFixed(2)}%`,
+    "--turn-progress": clippedProgress.toFixed(3),
+    "--turn-shadow-opacity": (0.18 + Math.sin(clippedProgress * Math.PI) * 0.38).toFixed(3),
+    "--turn-skew": `${skew.toFixed(2)}deg`,
+    "--turn-top-edge": `${topEdge.toFixed(2)}%`,
+  } as CSSProperties;
+}
+
+function pageTurnEdges(
+  direction: TurnDirection,
+  corner: TurnCorner,
+  progress: number,
+): { topEdge: number; bottomEdge: number } {
+  const leadingEdge = progress * 100;
+  const trailingEdge = clamp((progress - 0.08) / 0.92, 0, 1) * 100;
+  const topEdge = corner === "top" ? leadingEdge : trailingEdge;
+  const bottomEdge = corner === "top" ? trailingEdge : leadingEdge;
+
+  if (direction === "forward") {
+    return {
+      bottomEdge: 100 - bottomEdge,
+      topEdge: 100 - topEdge,
+    };
+  }
+
+  return { bottomEdge, topEdge };
 }
 
 function clamp(value: number, min: number, max: number): number {
