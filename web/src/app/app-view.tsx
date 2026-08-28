@@ -79,7 +79,6 @@ function WelcomeScreen({ onStart }: { onStart(): void }) {
   return (
     <main className="welcome-screen">
       <section className="welcome-copy" aria-labelledby="welcome-title">
-        <p className="eyebrow">Browser annotation export</p>
         <h1 id="welcome-title">AfterBook.</h1>
         <p className="welcome-lede">
           Keep the parts of an eBook that mattered to you. Connect a supported
