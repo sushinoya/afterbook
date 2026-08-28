@@ -182,9 +182,33 @@ test("renders the EPUB preview as an open book across landscape screens", async 
       })
       .toBe(true);
 
-    await dragTopRightPageCorner(page, dialog);
+    await pullTopRightPageCorner(page, dialog);
+    const draggingForward = await turnMetrics(dialog);
+    assert.equal(draggingForward.phase, "dragging", "page corner drag should move a live sheet");
+    assert.ok(
+      draggingForward.progress > 0.45,
+      "dragged page should follow the pointer before release",
+    );
+    assert.notEqual(
+      draggingForward.transform,
+      "none",
+      "dragged page should have an active transform before release",
+    );
+    assert.deepEqual(
+      draggingForward.basePages,
+      [1, 4],
+      "during a forward drag, the resting spread should be old-left plus next-right",
+    );
+    assert.deepEqual(
+      draggingForward.sheetPages,
+      { front: 2, back: 3 },
+      "dragged sheet should expose page 2 on the front and page 3 on the back",
+    );
+
+    await page.mouse.up();
     const turningForward = await turnMetrics(dialog);
     assert.equal(turningForward.direction, "forward", "forward drag should start a forward turn");
+    assert.equal(turningForward.phase, "completing", "released forward drag should complete");
     assert.ok(
       turningForward.durationMs <= 500,
       "page turn animation should feel responsive, not slow",
@@ -219,6 +243,35 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     });
     const returnedMetrics = await bookShapeMetrics(page);
     assert.deepEqual(returnedMetrics.basePages, [1, 2], "previous button should return to pages 1 and 2");
+
+    await dialog.getByRole("button", { name: "Next page", exact: true }).click();
+    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible({
+      timeout: 3_000,
+    });
+    await pullTopLeftPageCorner(page, dialog);
+    const draggingBackward = await turnMetrics(dialog);
+    assert.equal(draggingBackward.direction, "backward", "backward drag should start a backward turn");
+    assert.equal(draggingBackward.phase, "dragging", "backward page corner drag should move a live sheet");
+    assert.ok(
+      draggingBackward.progress > 0.45,
+      "backward dragged page should follow the pointer before release",
+    );
+    assert.deepEqual(
+      draggingBackward.basePages,
+      [1, 4],
+      "during a backward drag, the resting spread should be previous-left plus old-right",
+    );
+    assert.deepEqual(
+      draggingBackward.sheetPages,
+      { front: 3, back: 2 },
+      "backward dragged sheet should expose page 3 on the front and page 2 on the back",
+    );
+    await page.mouse.up();
+    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible({
+      timeout: 3_000,
+    });
+    const draggedBackMetrics = await bookShapeMetrics(page);
+    assert.deepEqual(draggedBackMetrics.basePages, [1, 2], "backward corner drag should return to pages 1 and 2");
   }
 });
 
@@ -418,7 +471,7 @@ async function hoverTopRightPageCorner(page: Page, dialog: Locator) {
   await page.waitForTimeout(180);
 }
 
-async function dragTopRightPageCorner(page: Page, dialog: Locator) {
+async function pullTopRightPageCorner(page: Page, dialog: Locator) {
   const corner = dialog.getByRole("button", { name: "Top forward page corner" });
   const book = dialog.locator(".book-stage");
   const cornerBox = await corner.boundingBox();
@@ -432,8 +485,24 @@ async function dragTopRightPageCorner(page: Page, dialog: Locator) {
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(endX, endY, { steps: 12 });
-  await page.mouse.up();
-  await expect(dialog.locator('.open-book-reader[data-turn-state="turning"]')).toBeVisible();
+  await expect(dialog.locator('.turning-sheet[data-turn-phase="dragging"]')).toBeVisible();
+}
+
+async function pullTopLeftPageCorner(page: Page, dialog: Locator) {
+  const corner = dialog.getByRole("button", { name: "Top backward page corner" });
+  const book = dialog.locator(".book-stage");
+  const cornerBox = await corner.boundingBox();
+  const bookBox = await book.boundingBox();
+  assert.ok(cornerBox, "expected a visible previous-page corner");
+  assert.ok(bookBox, "expected a visible book stage");
+  const startX = cornerBox.x + cornerBox.width / 2;
+  const startY = cornerBox.y + cornerBox.height / 2;
+  const endX = bookBox.x + bookBox.width * 0.57;
+  const endY = bookBox.y + bookBox.height * 0.18;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 12 });
+  await expect(dialog.locator('.turning-sheet[data-turn-phase="dragging"]')).toBeVisible();
 }
 
 async function turnMetrics(dialog: Locator) {
@@ -444,6 +513,9 @@ async function turnMetrics(dialog: Locator) {
     }
     return {
       direction: sheet.getAttribute("data-turn-direction"),
+      phase: sheet.getAttribute("data-turn-phase"),
+      progress: Number(sheet.getAttribute("data-turn-progress")),
+      transform: getComputedStyle(sheet).transform,
       durationMs: animationDurationMs(getComputedStyle(sheet).animationDuration),
       basePages: Array.from(reader.querySelectorAll(".book-spread > .reader-page")).map(
         (pageElement) => Number(pageElement.getAttribute("data-page-number")),
