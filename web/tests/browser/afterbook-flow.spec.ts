@@ -164,11 +164,16 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     await assertCoverFillsPage(dialog);
 
     await hoverTopRightPageCorner(page, dialog);
-    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible();
+    await expect(dialog.locator('.open-book-reader[data-reader-state="read"]')).toBeVisible();
     assert.equal(
       await dialog.locator(".turning-sheet").count(),
       0,
       "hovering a page corner must not pre-fold or reveal a turning edge",
+    );
+    assert.equal(
+      await dialog.locator(".book-spread.incoming").count(),
+      0,
+      "hovering a page corner must not render a preview spread",
     );
 
     const fontSizeBefore = await visibleReaderTypeMetrics(dialog);
@@ -183,49 +188,59 @@ test("renders the EPUB preview as an open book across landscape screens", async 
       .toBe(true);
 
     await pullTopRightPageCorner(page, dialog);
-    const draggingForward = await turnMetrics(dialog);
-    assert.equal(draggingForward.phase, "dragging", "page corner drag should move a live sheet");
+    const draggingForward = await dragCueMetrics(dialog);
+    assert.equal(draggingForward.state, "dragging", "page corner drag should be tracked");
+    assert.equal(draggingForward.direction, "forward", "forward corner drag should be tracked");
     assert.ok(
       draggingForward.progress > 0.45,
-      "dragged page should follow the pointer before release",
+      "drag progress should follow the pointer before release",
     );
     assert.notEqual(
-      draggingForward.transform,
+      draggingForward.currentTransform,
       "none",
-      "dragged page should have an active transform before release",
+      "resting spread should nudge with the pointer before release",
     );
-    assert.deepEqual(
-      draggingForward.basePages,
-      [1, 4],
-      "during a forward drag, the resting spread should be old-left plus next-right",
+    assert.equal(
+      draggingForward.incomingCount,
+      0,
+      "dragging should not create an overlapping preview spread before release",
     );
+    assert.equal(draggingForward.turningSheetCount, 0, "reader should not render turning sheets");
     assert.deepEqual(
-      draggingForward.sheetPages,
-      { front: 2, back: 3 },
-      "dragged sheet should expose page 2 on the front and page 3 on the back",
+      draggingForward.currentPages,
+      [1, 2],
+      "dragging should keep the current spread intact",
     );
 
     await page.mouse.up();
-    const turningForward = await turnMetrics(dialog);
-    assert.equal(turningForward.direction, "forward", "forward drag should start a forward turn");
-    assert.equal(turningForward.phase, "completing", "released forward drag should complete");
+    const turningForward = await spreadTransitionMetrics(dialog);
+    assert.equal(turningForward.readerState, "transitioning", "released forward drag should start a spread transition");
+    assert.equal(turningForward.direction, "forward", "forward drag should transition forward");
     assert.ok(
-      turningForward.durationMs <= 500,
-      "page turn animation should feel responsive, not slow",
+      turningForward.durationMs <= 260,
+      "spread transition should feel responsive, not slow",
+    );
+    assert.equal(turningForward.hasTurningSheet, false, "reader should not use a 3D turning sheet");
+    assert.deepEqual(
+      turningForward.currentPages,
+      [1, 2],
+      "during a forward transition, the current spread should stay stable",
     );
     assert.deepEqual(
-      turningForward.basePages,
-      [1, 4],
-      "during a forward turn, the resting spread should be old-left plus next-right",
+      turningForward.incomingPages,
+      [3, 4],
+      "during a forward transition, the incoming spread should be pages 3 and 4",
     );
-    assert.deepEqual(
-      turningForward.sheetPages,
-      { front: 2, back: 3 },
-      "turning sheet should expose page 2 on the front and page 3 on the back",
+    assert.ok(turningForward.page3Content, "forward transition should include page 3 content");
+    assert.equal(turningForward.page3Content.transform, "none", "page 3 content must not be flipped or rotated");
+    assert.equal(turningForward.page3Content.writingMode, "horizontal-tb", "page 3 text must remain horizontal");
+    assert.ok(
+      turningForward.page3Content.box.height > turningForward.page3Content.box.width,
+      "page 3 content should remain portrait-oriented during the transition",
     );
     await expect(dialog.getByText("A browser-tested highlight.")).toBeVisible();
     await expect(dialog.getByText("A browser-tested note.")).toBeVisible();
-    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible({
+    await expect(dialog.locator('.open-book-reader[data-reader-state="read"]')).toBeVisible({
       timeout: 3_000,
     });
 
@@ -238,36 +253,47 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     );
 
     await dialog.getByRole("button", { name: "Previous page", exact: true }).click();
-    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible({
+    await expect(dialog.locator('.open-book-reader[data-reader-state="read"]')).toBeVisible({
       timeout: 3_000,
     });
     const returnedMetrics = await bookShapeMetrics(page);
     assert.deepEqual(returnedMetrics.basePages, [1, 2], "previous button should return to pages 1 and 2");
 
     await dialog.getByRole("button", { name: "Next page", exact: true }).click();
-    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible({
+    await expect(dialog.locator('.open-book-reader[data-reader-state="read"]')).toBeVisible({
       timeout: 3_000,
     });
     await pullTopLeftPageCorner(page, dialog);
-    const draggingBackward = await turnMetrics(dialog);
-    assert.equal(draggingBackward.direction, "backward", "backward drag should start a backward turn");
-    assert.equal(draggingBackward.phase, "dragging", "backward page corner drag should move a live sheet");
+    const draggingBackward = await dragCueMetrics(dialog);
+    assert.equal(draggingBackward.state, "dragging", "backward corner drag should be tracked");
+    assert.equal(draggingBackward.direction, "backward", "backward drag should be tracked");
     assert.ok(
       draggingBackward.progress > 0.45,
-      "backward dragged page should follow the pointer before release",
+      "backward drag progress should follow the pointer before release",
     );
+    assert.equal(draggingBackward.incomingCount, 0, "backward drag should not create a preview spread before release");
+    assert.equal(draggingBackward.turningSheetCount, 0, "reader should not render turning sheets");
     assert.deepEqual(
-      draggingBackward.basePages,
-      [1, 4],
-      "during a backward drag, the resting spread should be previous-left plus old-right",
-    );
-    assert.deepEqual(
-      draggingBackward.sheetPages,
-      { front: 3, back: 2 },
-      "backward dragged sheet should expose page 3 on the front and page 2 on the back",
+      draggingBackward.currentPages,
+      [3, 4],
+      "backward dragging should keep the current spread intact",
     );
     await page.mouse.up();
-    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible({
+    const turningBackward = await spreadTransitionMetrics(dialog);
+    assert.equal(turningBackward.readerState, "transitioning", "released backward drag should start a spread transition");
+    assert.equal(turningBackward.direction, "backward", "backward drag should transition backward");
+    assert.deepEqual(
+      turningBackward.currentPages,
+      [3, 4],
+      "during a backward transition, the current spread should stay stable",
+    );
+    assert.deepEqual(
+      turningBackward.incomingPages,
+      [1, 2],
+      "during a backward transition, the incoming spread should be pages 1 and 2",
+    );
+    assert.equal(turningBackward.hasTurningSheet, false, "reader should not use a 3D turning sheet");
+    await expect(dialog.locator('.open-book-reader[data-reader-state="read"]')).toBeVisible({
       timeout: 3_000,
     });
     const draggedBackMetrics = await bookShapeMetrics(page);
@@ -485,7 +511,7 @@ async function pullTopRightPageCorner(page: Page, dialog: Locator) {
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(endX, endY, { steps: 12 });
-  await expect(dialog.locator('.turning-sheet[data-turn-phase="dragging"]')).toBeVisible();
+  await expect(dialog.locator('.open-book-reader[data-reader-state="dragging"]')).toBeVisible();
 }
 
 async function pullTopLeftPageCorner(page: Page, dialog: Locator) {
@@ -502,28 +528,63 @@ async function pullTopLeftPageCorner(page: Page, dialog: Locator) {
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(endX, endY, { steps: 12 });
-  await expect(dialog.locator('.turning-sheet[data-turn-phase="dragging"]')).toBeVisible();
+  await expect(dialog.locator('.open-book-reader[data-reader-state="dragging"]')).toBeVisible();
 }
 
-async function turnMetrics(dialog: Locator) {
+async function dragCueMetrics(dialog: Locator) {
   return dialog.locator(".open-book-reader").evaluate((reader) => {
-    const sheet = reader.querySelector(".turning-sheet");
-    if (!sheet) {
-      throw new Error("Expected a turning sheet.");
+    const currentSpread = reader.querySelector(".book-spread.current");
+    if (!currentSpread) {
+      throw new Error("Expected the current book spread.");
     }
     return {
-      direction: sheet.getAttribute("data-turn-direction"),
-      phase: sheet.getAttribute("data-turn-phase"),
-      progress: Number(sheet.getAttribute("data-turn-progress")),
-      transform: getComputedStyle(sheet).transform,
-      durationMs: animationDurationMs(getComputedStyle(sheet).animationDuration),
-      basePages: Array.from(reader.querySelectorAll(".book-spread > .reader-page")).map(
+      currentPages: Array.from(currentSpread.querySelectorAll(":scope > .reader-page")).map(
         (pageElement) => Number(pageElement.getAttribute("data-page-number")),
       ),
-      sheetPages: {
-        front: Number(sheet.getAttribute("data-front-page")),
-        back: Number(sheet.getAttribute("data-back-page")),
-      },
+      currentTransform: getComputedStyle(currentSpread).transform,
+      direction: reader.getAttribute("data-drag-direction"),
+      incomingCount: reader.querySelectorAll(".book-spread.incoming").length,
+      progress: Number(reader.getAttribute("data-drag-progress")),
+      state: reader.getAttribute("data-reader-state"),
+      turningSheetCount: reader.querySelectorAll(".turning-sheet").length,
+    };
+  });
+}
+
+async function spreadTransitionMetrics(dialog: Locator) {
+  return dialog.locator(".open-book-reader").evaluate((reader) => {
+    const currentSpread = reader.querySelector(".book-spread.current");
+    const incomingSpread = reader.querySelector(".book-spread.incoming");
+    if (!currentSpread || !incomingSpread) {
+      throw new Error("Expected current and incoming book spreads.");
+    }
+    const page3Content = incomingSpread.querySelector(
+      '.reader-page[data-page-number="3"] .reader-page-content',
+    );
+    const page3Rect = page3Content?.getBoundingClientRect();
+    const page3Style = page3Content ? getComputedStyle(page3Content) : null;
+    return {
+      currentPages: Array.from(currentSpread.querySelectorAll(":scope > .reader-page")).map(
+        (pageElement) => Number(pageElement.getAttribute("data-page-number")),
+      ),
+      direction: incomingSpread.getAttribute("data-transition-direction"),
+      durationMs: animationDurationMs(getComputedStyle(incomingSpread).animationDuration),
+      hasTurningSheet: reader.querySelector(".turning-sheet") !== null,
+      incomingPages: Array.from(incomingSpread.querySelectorAll(":scope > .reader-page")).map(
+        (pageElement) => Number(pageElement.getAttribute("data-page-number")),
+      ),
+      page3Content:
+        page3Rect && page3Style
+          ? {
+              box: {
+                height: page3Rect.height,
+                width: page3Rect.width,
+              },
+              transform: page3Style.transform,
+              writingMode: page3Style.writingMode,
+            }
+          : null,
+      readerState: reader.getAttribute("data-reader-state"),
     };
 
     function animationDurationMs(value: string) {
