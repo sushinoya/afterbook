@@ -178,7 +178,7 @@ function ConnectionWizard({
         </div>
       ) : null}
 
-      <div className="wizard-actions">
+      <div className={`wizard-actions${step === 0 ? " single-action" : ""}`}>
         {step === 1 ? (
           <button
             className="secondary-button"
@@ -189,10 +189,12 @@ function ConnectionWizard({
             Back
           </button>
         ) : null}
-        <div className="connection-detail">
-          <ShieldCheck size={17} aria-hidden="true" />
-          <span>{model.connection?.label || selectedReader?.connectionLabel}</span>
-        </div>
+        {step === 1 ? (
+          <div className="connection-detail">
+            <ShieldCheck size={17} aria-hidden="true" />
+            <span>{model.connection?.label || selectedReader?.connectionLabel}</span>
+          </div>
+        ) : null}
         {step === 0 ? (
           <button className="primary-button" type="button" onClick={() => setStep(1)}>
             Continue

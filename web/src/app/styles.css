@@ -304,6 +304,10 @@ button:disabled {
   background: rgb(255 253 248 / 0.78);
 }
 
+.wizard-actions.single-action {
+  justify-content: flex-end;
+}
+
 .connected-banner {
   min-height: 120px;
   display: grid;
