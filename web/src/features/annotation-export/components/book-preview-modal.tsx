@@ -19,7 +19,7 @@ import {
   type EpubPreviewPage,
 } from "../epub-preview.js";
 
-const PAGE_TURN_MS = 760;
+const PAGE_TURN_MS = 440;
 const TURN_DRAG_DISTANCE = 38;
 
 export function BookPreviewModal({
@@ -332,7 +332,12 @@ function EpubBookReader({
       data-reader-engine="react-spread"
       data-turn-state={turn ? "turning" : "read"}
       data-spread-index={spreadIndex}
-      style={{ "--reader-font-size": `${16 * fontScale}px` } as CSSProperties}
+      style={
+        {
+          "--page-turn-duration": `${PAGE_TURN_MS}ms`,
+          "--reader-font-size": `${16 * fontScale}px`,
+        } as CSSProperties
+      }
     >
       <button
         className="spread-turn previous"

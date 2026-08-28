@@ -185,6 +185,10 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     await dragTopRightPageCorner(page, dialog);
     const turningForward = await turnMetrics(dialog);
     assert.equal(turningForward.direction, "forward", "forward drag should start a forward turn");
+    assert.ok(
+      turningForward.durationMs <= 500,
+      "page turn animation should feel responsive, not slow",
+    );
     assert.deepEqual(
       turningForward.basePages,
       [1, 4],
@@ -430,7 +434,6 @@ async function dragTopRightPageCorner(page: Page, dialog: Locator) {
   await page.mouse.move(endX, endY, { steps: 12 });
   await page.mouse.up();
   await expect(dialog.locator('.open-book-reader[data-turn-state="turning"]')).toBeVisible();
-  await page.waitForTimeout(120);
 }
 
 async function turnMetrics(dialog: Locator) {
@@ -441,6 +444,7 @@ async function turnMetrics(dialog: Locator) {
     }
     return {
       direction: sheet.getAttribute("data-turn-direction"),
+      durationMs: animationDurationMs(getComputedStyle(sheet).animationDuration),
       basePages: Array.from(reader.querySelectorAll(".book-spread > .reader-page")).map(
         (pageElement) => Number(pageElement.getAttribute("data-page-number")),
       ),
@@ -449,6 +453,14 @@ async function turnMetrics(dialog: Locator) {
         back: Number(sheet.getAttribute("data-back-page")),
       },
     };
+
+    function animationDurationMs(value: string) {
+      const firstDuration = value.split(",")[0]?.trim() || "0s";
+      if (firstDuration.endsWith("ms")) {
+        return Number.parseFloat(firstDuration);
+      }
+      return Number.parseFloat(firstDuration) * 1000;
+    }
   });
 }
 
