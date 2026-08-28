@@ -756,8 +756,7 @@ button:disabled {
   min-width: 0;
   height: 100%;
   overflow: hidden;
-  padding: var(--reader-page-pad) var(--reader-page-pad)
-    calc(var(--reader-page-pad) + var(--reader-folio-area));
+  padding: var(--reader-page-pad);
   border: 1px solid rgb(73 54 31 / 0.16);
   background:
     linear-gradient(90deg, rgb(92 69 41 / 0.06), transparent 14%, transparent 88%, rgb(92 69 41 / 0.05)),
@@ -809,7 +808,7 @@ button:disabled {
   box-sizing: border-box;
   min-height: 0;
   width: min(100%, 43ch);
-  height: 100%;
+  height: calc(100% - var(--reader-folio-area));
   margin: 0 auto;
   padding-bottom: 0;
   overflow: hidden;
@@ -925,20 +924,21 @@ button:disabled {
 }
 
 .book-page-number {
-  position: absolute;
-  right: var(--reader-page-pad);
-  bottom: max(16px, calc(var(--reader-page-pad) * 0.52));
+  position: static;
   z-index: 1;
+  display: block;
+  margin-top: clamp(12px, 2vh, 18px);
   color: rgb(104 84 55 / 0.62);
   font-size: 12px;
   font-weight: 800;
   line-height: 1;
+  text-align: right;
+  pointer-events: none;
 }
 
 .reader-page.left .book-page-number,
 .reader-page.--left .book-page-number {
-  right: auto;
-  left: var(--reader-page-pad);
+  text-align: left;
 }
 
 .spread-turn {

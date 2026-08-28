@@ -378,6 +378,31 @@ async function bookShapeMetrics(page: Page) {
       left.right > right.left + 1 &&
       left.top < right.bottom - 1 &&
       left.bottom > right.top + 1;
+    const textLineOverlapsPageNumber = (content: Element | null, pageNumber: Element | null) => {
+      if (!content || !pageNumber) {
+        return 0;
+      }
+      const pageNumberRect = pageNumber.getBoundingClientRect();
+      const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          return node.textContent?.trim()
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT;
+        },
+      });
+      let overlapCount = 0;
+      while (walker.nextNode()) {
+        const range = document.createRange();
+        range.selectNodeContents(walker.currentNode);
+        for (const rect of Array.from(range.getClientRects())) {
+          if (rect.width > 1 && rect.height > 1 && rectanglesOverlap(rect, pageNumberRect)) {
+            overlapCount += 1;
+          }
+        }
+        range.detach();
+      }
+      return overlapCount;
+    };
     const visiblePages = Array.from(reader.querySelectorAll(".reader-page.--simple"))
       .filter((pageElement) => {
         const rect = pageElement.getBoundingClientRect();
@@ -402,10 +427,12 @@ async function bookShapeMetrics(page: Page) {
           contentBottom: contentRect?.bottom || null,
           hasPageNumber: pageElement.querySelector(".book-page-number") !== null,
           kind: pageElement.getAttribute("data-kind"),
+          pageNumberPosition: pageNumber ? getComputedStyle(pageNumber).position : null,
           pageNumberOverlapsContent:
             contentRect && pageNumberRect ? rectanglesOverlap(contentRect, pageNumberRect) : false,
           pageNumberTop: pageNumberRect?.top || null,
           scrollHeight: pageElement.scrollHeight,
+          textLineOverlapCount: textLineOverlapsPageNumber(content, pageNumber),
           borderTopLeftRadius: style.borderTopLeftRadius,
           borderTopRightRadius: style.borderTopRightRadius,
           boxShadow: style.boxShadow,
@@ -470,10 +497,16 @@ function assertBookShape(
     if (pageMetrics.kind === "cover") {
       assert.equal(pageMetrics.hasPageNumber, false, "cover pages should not render a folio");
     } else if (pageMetrics.hasPageNumber) {
+      assert.equal(pageMetrics.pageNumberPosition, "static", "page number should be in normal layout flow");
       assert.equal(
         pageMetrics.pageNumberOverlapsContent,
         false,
         "page number must not overlap the readable content area",
+      );
+      assert.equal(
+        pageMetrics.textLineOverlapCount,
+        0,
+        "page number must not overlap actual rendered text lines",
       );
       assert.ok(
         pageMetrics.pageNumberTop !== null &&
