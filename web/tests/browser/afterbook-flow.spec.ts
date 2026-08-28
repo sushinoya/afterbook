@@ -99,9 +99,9 @@ test("selects a Kobo directory, displays books, and downloads a valid EPUB", asy
   await fixtureBook.click();
   const dialog = page.getByRole("dialog", { name: "Browser Fixture" });
   await expect(dialog).toBeVisible({ timeout: 60_000 });
-  await expect(dialog.locator('.open-book-reader[data-flip-engine="page-flip"]')).toBeVisible();
-  await expect(dialog.getByText(/Page 1 of \d+/)).toBeVisible();
-  await dialog.getByRole("button", { name: "Next page" }).click();
+  await expect(dialog.locator('.open-book-reader[data-reader-engine="react-spread"]')).toBeVisible();
+  await expect(dialog.getByText(/Pages 1-2 of \d+/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Next page", exact: true }).click();
   await expect(dialog.getByText("A browser-tested highlight.")).toBeVisible();
   await expect(dialog.getByText("A browser-tested note.")).toBeVisible();
 
@@ -160,28 +160,61 @@ test("renders the EPUB preview as an open book across landscape screens", async 
     const dialog = await openFixtureBook(page);
     const initialMetrics = await bookShapeMetrics(page);
     assertBookShape(initialMetrics, viewport);
+    assert.deepEqual(initialMetrics.basePages, [1, 2], "initial spread should show pages 1 and 2");
+    await assertCoverFillsPage(dialog);
 
-    const fontSizeBefore = await visibleReaderFontSize(dialog);
+    await hoverTopRightPageCorner(page, dialog);
+    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible();
+    assert.equal(
+      await dialog.locator(".turning-sheet").count(),
+      0,
+      "hovering a page corner must not pre-fold or reveal a turning edge",
+    );
+
+    const fontSizeBefore = await visibleReaderTypeMetrics(dialog);
     await setReaderTextSizeToLarge(page, dialog);
     await expect
-      .poll(() => visibleReaderFontSize(dialog), {
-        message: "font size slider should resize book text",
+      .poll(async () => {
+        const after = await visibleReaderTypeMetrics(dialog);
+        return after.body > fontSizeBefore.body && after.heading > fontSizeBefore.heading;
+      }, {
+        message: "font size slider should resize book text and headings",
       })
-      .toBeGreaterThan(fontSizeBefore);
+      .toBe(true);
 
     await dragTopRightPageCorner(page, dialog);
+    const turningForward = await turnMetrics(dialog);
+    assert.equal(turningForward.direction, "forward", "forward drag should start a forward turn");
+    assert.deepEqual(
+      turningForward.basePages,
+      [1, 4],
+      "during a forward turn, the resting spread should be old-left plus next-right",
+    );
+    assert.deepEqual(
+      turningForward.sheetPages,
+      { front: 2, back: 3 },
+      "turning sheet should expose page 2 on the front and page 3 on the back",
+    );
     await expect(dialog.getByText("A browser-tested highlight.")).toBeVisible();
     await expect(dialog.getByText("A browser-tested note.")).toBeVisible();
-    await expect(dialog.locator('.open-book-reader[data-flip-state="read"]')).toBeVisible({
+    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible({
       timeout: 3_000,
     });
 
     const turnedMetrics = await bookShapeMetrics(page);
     assertBookShape(turnedMetrics, viewport);
+    assert.deepEqual(turnedMetrics.basePages, [3, 4], "next spread should settle on pages 3 and 4");
     assert.ok(
-      Math.abs(turnedMetrics.shell.top - initialMetrics.shell.top) <= 1,
-      "book shell should not jump vertically while turning pages",
+      Math.abs(turnedMetrics.stage.top - initialMetrics.stage.top) <= 1,
+      "book stage should not jump vertically while turning pages",
     );
+
+    await dialog.getByRole("button", { name: "Previous page", exact: true }).click();
+    await expect(dialog.locator('.open-book-reader[data-turn-state="read"]')).toBeVisible({
+      timeout: 3_000,
+    });
+    const returnedMetrics = await bookShapeMetrics(page);
+    assert.deepEqual(returnedMetrics.basePages, [1, 2], "previous button should return to pages 1 and 2");
   }
 });
 
@@ -257,7 +290,7 @@ async function openFixtureBook(page: Page) {
   await fixtureBook.click();
   const dialog = page.getByRole("dialog", { name: "Browser Fixture" });
   await expect(dialog).toBeVisible({ timeout: 60_000 });
-  await expect(dialog.locator(".flip-book-page.--simple").first()).toBeVisible({
+  await expect(dialog.locator('.reader-page[data-page-number="1"]').first()).toBeVisible({
     timeout: 60_000,
   });
   return dialog;
@@ -265,53 +298,51 @@ async function openFixtureBook(page: Page) {
 
 async function bookShapeMetrics(page: Page) {
   return page.locator(".open-book-reader").evaluate((reader) => {
-    const shell = reader.querySelector(".page-flip-shell");
-    const book = reader.querySelector(".page-flip-book");
-    const wrapper = reader.querySelector(".stf__wrapper");
-    if (!shell || !book || !wrapper) {
-      throw new Error("Expected page-flip book DOM to be mounted.");
+    const stage = reader.querySelector(".book-stage");
+    const spread = reader.querySelector(".book-spread");
+    if (!stage || !spread) {
+      throw new Error("Expected React book spread DOM to be mounted.");
     }
-    const shellRect = shell.getBoundingClientRect();
-    const shellStyle = getComputedStyle(shell);
-    const visiblePages = Array.from(reader.querySelectorAll(".flip-book-page"))
-      .filter((pageElement) => {
-        const rect = pageElement.getBoundingClientRect();
-        const style = getComputedStyle(pageElement);
-        return rect.width > 0 && rect.height > 0 && style.display !== "none";
-      })
-      .map((pageElement) => {
+    const stageRect = stage.getBoundingClientRect();
+    const stageStyle = getComputedStyle(stage);
+    const spreadRect = spread.getBoundingClientRect();
+    const visiblePages = Array.from(spread.querySelectorAll(":scope > .reader-page")).map(
+      (pageElement) => {
         const rect = pageElement.getBoundingClientRect();
         const style = getComputedStyle(pageElement);
         return {
+          pageNumber: Number(pageElement.getAttribute("data-page-number")),
           left: rect.left,
           right: rect.right,
           top: rect.top,
+          bottom: rect.bottom,
           width: rect.width,
           height: rect.height,
+          clientHeight: pageElement.clientHeight,
+          scrollHeight: pageElement.scrollHeight,
           borderTopLeftRadius: style.borderTopLeftRadius,
           borderTopRightRadius: style.borderTopRightRadius,
           boxShadow: style.boxShadow,
           overflowY: style.overflowY,
         };
-      });
-    const spreadLeft = Math.min(...visiblePages.map((pageMetrics) => pageMetrics.left));
-    const spreadRight = Math.max(...visiblePages.map((pageMetrics) => pageMetrics.right));
-    const spreadHeight = Math.max(...visiblePages.map((pageMetrics) => pageMetrics.height));
+      },
+    );
 
     return {
       documentScrollWidth: document.documentElement.scrollWidth,
-      engine: reader.getAttribute("data-flip-engine"),
-      shell: {
-        top: shellRect.top,
-        width: shellRect.width,
-        height: shellRect.height,
-        filter: shellStyle.filter,
+      engine: reader.getAttribute("data-reader-engine"),
+      basePages: visiblePages.map((pageMetrics) => pageMetrics.pageNumber),
+      stage: {
+        top: stageRect.top,
+        bottom: stageRect.bottom,
+        width: stageRect.width,
+        height: stageRect.height,
+        filter: stageStyle.filter,
       },
       spread: {
-        width: spreadRight - spreadLeft,
-        height: spreadHeight,
+        width: spreadRect.width,
+        height: spreadRect.height,
       },
-      isLandscape: wrapper.classList.contains("--landscape"),
       pages: visiblePages,
     };
   });
@@ -325,25 +356,47 @@ function assertBookShape(
     metrics.documentScrollWidth <= viewport.width + 1,
     "modal must not create horizontal overflow",
   );
-  assert.equal(metrics.engine, "page-flip", "reader should be backed by the page-flip engine");
-  assert.equal(metrics.isLandscape, true, "book should stay in two-page landscape mode");
+  assert.equal(metrics.engine, "react-spread", "reader should use the controlled React spread");
   assert.ok(metrics.spread.width > metrics.spread.height * 1.28, "spread should read as an open book");
-  assert.notEqual(metrics.shell.filter, "none", "book should cast a drop shadow");
-  assert.ok(metrics.pages.length >= 2, "spread should expose two visible pages");
+  assert.ok(metrics.spread.width < metrics.spread.height * 1.42, "spread proportions should stay book-like");
+  assert.ok(metrics.stage.height > viewport.height * 0.52, "book should be large enough for the viewport");
+  assert.ok(
+    viewport.height - metrics.stage.bottom >= 18,
+    "book stage should leave room for its drop shadow at the bottom",
+  );
+  assert.notEqual(metrics.stage.filter, "none", "book should cast a drop shadow");
+  assert.equal(metrics.pages.length, 2, "spread should expose two resting pages");
 
   for (const pageMetrics of metrics.pages) {
     assert.ok(pageMetrics.height > pageMetrics.width, "each page should be portrait-shaped");
+    assert.ok(pageMetrics.height < pageMetrics.width * 1.58, "page proportions should stay close to a book");
     assert.equal(pageMetrics.overflowY, "hidden", "pages should not show vertical scrollbars");
     assert.notEqual(pageMetrics.boxShadow, "none", "pages should have inset/depth shadow");
     assert.notEqual(pageMetrics.borderTopLeftRadius, "0px", "pages should have rounded corners");
     assert.notEqual(pageMetrics.borderTopRightRadius, "0px", "pages should have rounded corners");
+    assert.ok(
+      Number.parseFloat(pageMetrics.borderTopLeftRadius) <= 10,
+      "page corners should not be over-rounded",
+    );
+    assert.ok(
+      pageMetrics.scrollHeight <= pageMetrics.clientHeight + 1,
+      "pages should not overflow vertically",
+    );
   }
 }
 
-async function visibleReaderFontSize(dialog: Locator) {
-  return dialog.locator(".flip-book-page.--simple .epub-page-content").first().evaluate((element) =>
-    Number.parseFloat(getComputedStyle(element).fontSize),
-  );
+async function visibleReaderTypeMetrics(dialog: Locator) {
+  return dialog.locator('.reader-page[data-kind="title"]').evaluate((element) => {
+    const body = element.querySelector(".reader-page-content");
+    const heading = element.querySelector(".reader-page-content h1");
+    if (!body || !heading) {
+      throw new Error("Expected title page body and heading.");
+    }
+    return {
+      body: Number.parseFloat(getComputedStyle(body).fontSize),
+      heading: Number.parseFloat(getComputedStyle(heading).fontSize),
+    };
+  });
 }
 
 async function setReaderTextSizeToLarge(page: Page, dialog: Locator) {
@@ -353,18 +406,85 @@ async function setReaderTextSizeToLarge(page: Page, dialog: Locator) {
   await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
 }
 
+async function hoverTopRightPageCorner(page: Page, dialog: Locator) {
+  const corner = dialog.getByRole("button", { name: "Top forward page corner" });
+  const box = await corner.boundingBox();
+  assert.ok(box, "expected visible next-page corner");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForTimeout(180);
+}
+
 async function dragTopRightPageCorner(page: Page, dialog: Locator) {
-  const rightPage = dialog.locator(".flip-book-page.--right.--simple").first();
-  const box = await rightPage.boundingBox();
-  assert.ok(box, "expected a visible right-hand page to drag");
-  const startX = box.x + box.width - 6;
-  const startY = box.y + 6;
-  const endX = box.x - box.width * 0.85;
-  const endY = box.y + box.height * 0.2;
+  const corner = dialog.getByRole("button", { name: "Top forward page corner" });
+  const book = dialog.locator(".book-stage");
+  const cornerBox = await corner.boundingBox();
+  const bookBox = await book.boundingBox();
+  assert.ok(cornerBox, "expected a visible next-page corner");
+  assert.ok(bookBox, "expected a visible book stage");
+  const startX = cornerBox.x + cornerBox.width / 2;
+  const startY = cornerBox.y + cornerBox.height / 2;
+  const endX = bookBox.x + bookBox.width * 0.43;
+  const endY = bookBox.y + bookBox.height * 0.18;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(endX, endY, { steps: 12 });
   await page.mouse.up();
+  await expect(dialog.locator('.open-book-reader[data-turn-state="turning"]')).toBeVisible();
+  await page.waitForTimeout(120);
+}
+
+async function turnMetrics(dialog: Locator) {
+  return dialog.locator(".open-book-reader").evaluate((reader) => {
+    const sheet = reader.querySelector(".turning-sheet");
+    if (!sheet) {
+      throw new Error("Expected a turning sheet.");
+    }
+    return {
+      direction: sheet.getAttribute("data-turn-direction"),
+      basePages: Array.from(reader.querySelectorAll(".book-spread > .reader-page")).map(
+        (pageElement) => Number(pageElement.getAttribute("data-page-number")),
+      ),
+      sheetPages: {
+        front: Number(sheet.getAttribute("data-front-page")),
+        back: Number(sheet.getAttribute("data-back-page")),
+      },
+    };
+  });
+}
+
+async function assertCoverFillsPage(dialog: Locator) {
+  const coverMetrics = await dialog.locator('.reader-page[data-kind="cover"]').evaluate((pageElement) => {
+    const media = pageElement.querySelector("img, svg");
+    if (!media) {
+      throw new Error("Expected cover media.");
+    }
+    const pageRect = pageElement.getBoundingClientRect();
+    const mediaRect = media.getBoundingClientRect();
+    return {
+      fillsPage:
+        Math.abs(pageRect.left - mediaRect.left) <= 1 &&
+        Math.abs(pageRect.top - mediaRect.top) <= 1 &&
+        Math.abs(pageRect.width - mediaRect.width) <= 1 &&
+        Math.abs(pageRect.height - mediaRect.height) <= 1,
+      media: {
+        height: mediaRect.height,
+        left: mediaRect.left,
+        top: mediaRect.top,
+        width: mediaRect.width,
+      },
+      page: {
+        height: pageRect.height,
+        left: pageRect.left,
+        top: pageRect.top,
+        width: pageRect.width,
+      },
+    };
+  });
+  assert.equal(
+    coverMetrics.fillsPage,
+    true,
+    `cover should fill the full page surface: ${JSON.stringify(coverMetrics)}`,
+  );
 }
 
 function buildFixture(): BrowserFixture {

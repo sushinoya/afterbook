@@ -2,9 +2,7 @@ import {
   BookOpen,
   BookOpenCheck,
   Check,
-  ChevronLeft,
   ChevronRight,
-  Download,
   FolderOpen,
   HardDrive,
   LibraryBig,
@@ -12,25 +10,16 @@ import {
   Lock,
   PlugZap,
   ShieldCheck,
-  X,
 } from "lucide-react";
-import * as pageFlipModule from "page-flip";
-import type { PageFlip as PageFlipInstance, PageFlipState } from "page-flip";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import type { GeneratedEpub, ReaderBook, ReaderDefinition } from "../domain/readers.js";
+import type { ReaderBook, ReaderDefinition } from "../domain/readers.js";
+import { BookPreviewModal } from "../features/annotation-export/components/book-preview-modal.js";
 import {
   type AnnotationExportViewModel,
   useAnnotationExport,
 } from "../features/annotation-export/use-annotation-export.js";
-import {
-  parseGeneratedEpubPreview,
-  type EpubPreviewPage,
-} from "../features/annotation-export/epub-preview.js";
 import { createReaderRegistry } from "../infrastructure/readers/reader-registry.js";
-
-const PageFlip = pageFlipModule.PageFlip ?? pageFlipModule.default?.PageFlip;
 
 export function AppView() {
   const readers = useMemo(() => createReaderRegistry(), []);
@@ -72,7 +61,7 @@ export function AppView() {
       </main>
 
       {model.selectedBook ? (
-        <BookModal
+        <BookPreviewModal
           book={model.selectedBook}
           epub={model.selectedEpub}
           isLoading={model.isLoadingSelectedBook}
@@ -315,323 +304,6 @@ function LibraryView({
       )}
     </section>
   );
-}
-
-function BookModal({
-  book,
-  epub,
-  isLoading,
-  isExporting,
-  isActiveExport,
-  onClose,
-  onExport,
-}: {
-  book: ReaderBook;
-  epub: GeneratedEpub | null;
-  isLoading: boolean;
-  isExporting: boolean;
-  isActiveExport: boolean;
-  onClose(): void;
-  onExport(book: ReaderBook): void;
-}) {
-  const closeButton = useRef<HTMLButtonElement>(null);
-  const [fontScale, setFontScale] = useState(1);
-
-  useEffect(() => {
-    closeButton.current?.focus();
-  }, [book.id]);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <section
-        className="book-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="book-dialog-title"
-      >
-        <h2 className="visually-hidden" id="book-dialog-title">
-          {book.title}
-        </h2>
-        <div className="book-modal-actions">
-          <label className="book-text-size-control">
-            <span aria-hidden="true">A</span>
-            <input
-              aria-label="Reader text size"
-              type="range"
-              min="0.88"
-              max="1.28"
-              step="0.04"
-              value={fontScale}
-              onInput={(event) => setFontScale(Number(event.currentTarget.value))}
-              onChange={(event) => setFontScale(Number(event.currentTarget.value))}
-            />
-            <strong aria-hidden="true">A</strong>
-          </label>
-          <button
-            className="book-action-button"
-            type="button"
-            onClick={() => onExport(book)}
-            disabled={isExporting || isLoading}
-          >
-            {isActiveExport ? (
-              <Loader2 className="spin" size={17} aria-hidden="true" />
-            ) : (
-              <Download size={17} aria-hidden="true" />
-            )}
-            Export EPUB
-          </button>
-          <button
-            className="book-action-button icon-only"
-            type="button"
-            aria-label="Close book"
-            onClick={onClose}
-            ref={closeButton}
-          >
-            <X size={20} aria-hidden="true" />
-          </button>
-        </div>
-
-        <EpubBookReader
-          book={book}
-          epub={epub}
-          fontScale={fontScale}
-          isLoading={isLoading}
-        />
-      </section>
-    </div>
-  );
-}
-
-function EpubBookReader({
-  book,
-  epub,
-  fontScale,
-  isLoading,
-}: {
-  book: ReaderBook;
-  epub: GeneratedEpub | null;
-  fontScale: number;
-  isLoading: boolean;
-}) {
-  const bookHost = useRef<HTMLDivElement>(null);
-  const pageFlip = useRef<PageFlipInstance | null>(null);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [flipState, setFlipState] = useState<PageFlipState>("read");
-  const previewState = useMemo(() => {
-    if (!epub) {
-      return { preview: null, error: null };
-    }
-    try {
-      return { preview: parseGeneratedEpubPreview(epub), error: null };
-    } catch (error) {
-      return {
-        preview: null,
-        error: error instanceof Error ? error.message : "Could not render this EPUB preview.",
-      };
-    }
-  }, [epub]);
-
-  const preview = previewState.preview;
-  const pageCount = preview?.pages.length || 0;
-  const renderedPageCount = pageCount + (pageCount % 2);
-  const spreadCount = Math.max(1, Math.ceil(renderedPageCount / 2));
-  const canTurnBack = currentPage > 0;
-  const canTurnForward = currentPage < Math.max(0, renderedPageCount - 2);
-
-  useEffect(() => {
-    setCurrentPage(0);
-    setFlipState("read");
-  }, [book.id, epub]);
-
-  useEffect(() => {
-    const host = bookHost.current;
-    if (!preview || !host) {
-      return undefined;
-    }
-    if (!PageFlip) {
-      throw new Error("The page-flip reader engine could not be loaded.");
-    }
-
-    host.replaceChildren();
-
-    const bookElement = document.createElement("div");
-    bookElement.className = "page-flip-book";
-    bookElement.setAttribute(
-      "aria-label",
-      `${preview.title} EPUB preview, ${spreadCount} spreads`,
-    );
-    host.appendChild(bookElement);
-
-    const pageElements = preview.pages.map((page, index) =>
-      createFlipBookPage(page, index, pageCount),
-    );
-
-    if (pageElements.length % 2 === 1) {
-      pageElements.push(createBlankFlipBookPage(pageElements.length + 1));
-    }
-
-    pageElements.forEach((pageElement) => bookElement.appendChild(pageElement));
-
-    const engine = new PageFlip(bookElement, {
-      width: 440,
-      height: 640,
-      size: "stretch",
-      minWidth: 190,
-      maxWidth: 560,
-      minHeight: 280,
-      maxHeight: 760,
-      autoSize: false,
-      drawShadow: true,
-      flippingTime: 900,
-      maxShadowOpacity: 0.45,
-      mobileScrollSupport: false,
-      showCover: false,
-      usePortrait: false,
-      disableFlipByClick: true,
-    });
-
-    pageFlip.current = engine;
-    engine.on("init", (event) => {
-      setCurrentPage(event.data.page);
-    });
-    engine.on("flip", (event) => {
-      setCurrentPage(event.data);
-    });
-    engine.on("changeState", (event) => {
-      setFlipState(event.data);
-    });
-    engine.loadFromHTML(pageElements);
-
-    return () => {
-      pageFlip.current = null;
-      try {
-        engine.destroy();
-      } finally {
-        host.replaceChildren();
-      }
-    };
-  }, [pageCount, preview, spreadCount]);
-
-  useEffect(() => {
-    if (!preview || spreadCount <= 1) {
-      return undefined;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") {
-        return;
-      }
-      event.preventDefault();
-      if (event.key === "ArrowRight") {
-        pageFlip.current?.flipNext("top");
-      } else {
-        pageFlip.current?.flipPrev("top");
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [preview, spreadCount]);
-
-  if (isLoading) {
-    return (
-      <div className="open-book-empty">
-        <Loader2 className="spin" size={22} aria-hidden="true" />
-        <span>Preparing EPUB preview.</span>
-      </div>
-    );
-  }
-
-  if (!preview || pageCount === 0) {
-    return (
-      <div className="open-book-empty">
-        <BookOpen size={22} aria-hidden="true" />
-        <span>{previewState.error || "Could not render this EPUB preview."}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="open-book-reader"
-      data-flip-engine="page-flip"
-      data-flip-state={flipState}
-      style={{ "--reader-font-size": `${16 * fontScale}px` } as CSSProperties}
-    >
-      <button
-        className="spread-turn previous"
-        type="button"
-        aria-label="Previous page"
-        onClick={() => pageFlip.current?.flipPrev("top")}
-        disabled={!canTurnBack}
-      >
-        <ChevronLeft size={26} aria-hidden="true" />
-      </button>
-      <div className="page-flip-shell">
-        <div className="page-flip-host" ref={bookHost} />
-      </div>
-      <button
-        className="spread-turn next"
-        type="button"
-        aria-label="Next page"
-        onClick={() => pageFlip.current?.flipNext("top")}
-        disabled={!canTurnForward}
-      >
-        <ChevronRight size={26} aria-hidden="true" />
-      </button>
-      <p className="book-progress" aria-live="polite">
-        Page {Math.min(currentPage + 1, pageCount)} of {pageCount}
-      </p>
-    </div>
-  );
-}
-
-function createFlipBookPage(
-  page: EpubPreviewPage,
-  index: number,
-  pageCount: number,
-) {
-  const pageElement = document.createElement("article");
-  pageElement.className = "flip-book-page";
-  pageElement.dataset.kind = page.kind;
-  if (page.kind === "cover") {
-    pageElement.dataset.density = "hard";
-  }
-  pageElement.setAttribute("role", "document");
-  pageElement.setAttribute(
-    "aria-label",
-    `${page.title}, page ${index + 1} of ${pageCount}`,
-  );
-  pageElement.innerHTML = `
-    <div class="epub-page-content">${page.bodyHtml}</div>
-    <span class="book-page-number">${index + 1}</span>
-  `;
-  return pageElement;
-}
-
-function createBlankFlipBookPage(pageNumber: number) {
-  const pageElement = document.createElement("article");
-  pageElement.className = "flip-book-page blank";
-  pageElement.setAttribute("aria-hidden", "true");
-  pageElement.innerHTML = `<span class="book-page-number">${pageNumber}</span>`;
-  return pageElement;
 }
 
 function BookCover({
