@@ -165,19 +165,6 @@ button:disabled {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.brand-mark {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: var(--ink);
-  color: #ffffff;
-  font-weight: 850;
 }
 
 .brand-lockup h1,
@@ -187,14 +174,12 @@ button:disabled {
 }
 
 .brand-lockup h1 {
-  font-size: 18px;
-  line-height: 1.2;
-}
-
-.brand-lockup p {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 13px;
+  color: var(--ink);
+  font-family:
+    "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 0.95;
 }
 
 .topbar-actions {

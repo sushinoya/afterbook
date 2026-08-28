@@ -39,12 +39,7 @@ export function AppView() {
     <div className="reader-app">
       <header className="topbar">
         <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
-            A
-          </div>
-          <div>
-            <h1>AfterBook</h1>
-          </div>
+          <h1>AfterBook</h1>
         </div>
         <div className="topbar-actions">
           <GitHubStarButton />
