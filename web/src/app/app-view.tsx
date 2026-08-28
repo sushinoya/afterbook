@@ -44,7 +44,6 @@ export function AppView() {
           </div>
           <div>
             <h1>AfterBook</h1>
-            <p>Keep the parts of an eBook that mattered to you.</p>
           </div>
         </div>
         <div className="topbar-actions">
